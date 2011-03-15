@@ -13,43 +13,11 @@
 # Author: Jan Wielemaker (wielemak@science.uva.nl)
 ################################################################
 
-.SUFFIXES: .tex .dvi .doc .pl
+PACKAGE=semweb
+include ../Makefile.defs
 
-PL=@PL@
-PLBASE=@PLBASE@
-PLARCH=@PLARCH@
-PLINCL=@PLINCL@
-PKGDOC=$(PLBASE)/doc/packages
-PCEHOME=../xpce
-LIBDIR=$(PLBASE)/library/semweb
 
-CC=@CC@
-COFLAGS=@COFLAGS@
-CWFLAGS=@CWFLAGS@
-CMFLAGS=@CMFLAGS@
-CIFLAGS=-I.
-CFLAGS=$(COFLAGS) $(CWFLAGS) $(CMFLAGS) $(CIFLAGS) @DEFS@
-LIBS=@LIBS@
-NETLIBS=@NETLIBS@
-
-PUBLICPL=swipl
-DOCTOTEX=$(PCEHOME)/bin/doc2tex
-PLTOTEX=$(PUBLICPL) -q -s pltotex.pl -g pltotex --
-DOC=semweb
-TEX=$(DOC).tex	rdfturtle.tex rdfturtlewrite.tex rdfcompare.tex \
-		rdfportray.tex rdflib.tex sparqlclient.tex
-DVI=$(DOC).dvi
-PDF=$(DOC).pdf
-RUNTEX=../../man/runtex
-
-LD=@LD@
-LDFLAGS=@LDSOFLAGS@
-
-INSTALL=@INSTALL@
-INSTALL_PROGRAM=@INSTALL_PROGRAM@
-INSTALL_DATA=@INSTALL_DATA@
-
-include common.mk
+include $(srcdir)/common.mk
 
 TARGETS=	rdf_db.@SO@ turtle.@SO@
 
@@ -59,20 +27,19 @@ RDFDBOBJ=	rdf_db.o atom.o lock.o md5.o avl.o atom_map.o debug.o \
 all:		$(TARGETS)
 
 rdf_db.@SO@:	$(RDFDBOBJ)
-		$(LD) $(LDFLAGS) -o $@ $(RDFDBOBJ) $(LIBS)
+		$(LD) $(LDFLAGS) -o $@ $(RDFDBOBJ) @LIBS@
 turtle.@SO@:	turtle.o
-		$(LD) $(LDFLAGS) -o $@ turtle.o $(LIBS)
+		$(LD) $(LDFLAGS) -o $@ turtle.o @LIBS@
 
-turtle.o:	turtle.c turtle_chars.c
+turtle.o:	$(srcdir)/turtle.c $(srcdir)/turtle_chars.c
 
-install:	$(TARGETS) $(LIBPL)
-		mkdir -p $(DESTDIR)$(LIBDIR)
-		mkdir -p $(DESTDIR)$(PLBASE)/lib/$(PLARCH)
+install:	$(TARGETS) $(addprefix $(srcdir)/, $(LIBPL))
+		mkdir -p $(DESTDIR)$(SOLIBDIR)
 		for f in $(TARGETS); do \
-		  $(INSTALL) -m 755 $$f $(DESTDIR)$(PLBASE)/lib/$(PLARCH); \
+		  $(INSTALL) -m 755 $$f $(SOLIBDIR); \
 		done
 		for f in $(DATA) $(LIBPL) README; do \
-		  $(INSTALL_DATA) $$f $(DESTDIR)$(LIBDIR); \
+		  $(INSTALL_DATA) $(srcdir)/$$f $(PLLIBDIR); \
 		done
 		$(PL) -f none -g make -t halt
 
@@ -97,24 +64,11 @@ uninstall::
 		(cd $(PLBASE)/library && rm -f $(LIBPL))
 		$(PL) -f none -g make -t halt
 
-rdf_db.o:	quote.c unicode_map.c
+rdf_db.o:	$(srcdir)/quote.c $(srcdir)/unicode_map.c
 
 ################################################################
 # Documentation
 ################################################################
-
-pdf:		$(PDF)
-
-$(DVI):		$(TEX)
-		$(RUNTEX) $(DOC)
-
-$(PDF):		$(TEX)
-		$(RUNTEX) --pdf $(DOC)
-
-html:		$(TEX)
-		latex2html $(DOC)
-
-$(TEX):		$(DOCTOTEX)
 
 rdfturtle.tex:	rdf_turtle.pl
 		$(PLTOTEX) --section 'library(semweb/rdf_turtle)'
@@ -135,10 +89,10 @@ sparqlclient.tex:	sparql_client.pl
 ################################################################
 
 check::
-		$(PL) -q -f test_rdf_db.pl -g test_rdf_db,halt -t 'halt(1)'
-		$(PL) -q -f litmap_test.pl -g test,halt -t 'halt(1)'
-		$(PL) -q -f test.pl -g run_tests,halt -t 'halt(1)'
-		$(PL) -q -f test_turtle.pl -g test_turtle,halt -t 'halt(1)'
+		( cd $(srcdir) && $(PL) -q -f test_rdf_db.pl -g test_rdf_db,halt -t 'halt(1)' )
+		( cd $(srcdir) && $(PL) -q -f litmap_test.pl -g test,halt -t 'halt(1)' )
+		( cd $(srcdir) && $(PL) -q -f test.pl -g run_tests,halt -t 'halt(1)' )
+		( cd $(srcdir) && $(PL) -q -f test_turtle.pl -g test_turtle,halt -t 'halt(1)' )
 
 
 ################################################################
