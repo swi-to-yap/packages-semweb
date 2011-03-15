@@ -130,6 +130,8 @@
 	    (rdf_meta)/1,		% +Heads
 	    op(1150, fx, (rdf_meta))
 	  ]).
+:- expects_dialect(swi).
+
 :- use_module(library(rdf)).
 :- use_module(library(lists)).
 :- use_module(library(shlib)).

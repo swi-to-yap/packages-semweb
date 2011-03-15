@@ -53,7 +53,7 @@
 :- use_module(rdf_db).
 
 
-/** <module> RDFS handling
+/* * <module> RDFS handling
 
 This module provides various primitives for  more high-level handling of
 RDF models from an RDFS viewpoint. Note  that there exist two approaches

@@ -824,7 +824,7 @@ run_test_script(Script) :-
 	file_base_name(Script, Base),
 	file_name_extension(Pred, _, Base),
 	load_files(Script, [silent(true)]),
-	Pred.
+	Pred:Pred.
 
 run_test_scripts(Directory) :-
 	(   script_dir(ScriptDir),

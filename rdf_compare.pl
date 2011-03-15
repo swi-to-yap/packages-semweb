@@ -33,6 +33,7 @@
 :- use_module(library(semweb/rdf_db)).
 :- use_module(library(apply)).
 :- use_module(library(debug)).
+:- use_module(library(lists)).
 
 
 /** <module> Compare RDF graphs
