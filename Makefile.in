@@ -27,9 +27,9 @@ RDFDBOBJ=	rdf_db.o atom.o lock.o md5.o avl.o atom_map.o debug.o \
 all:		$(TARGETS)
 
 rdf_db.@SO@:	$(RDFDBOBJ)
-		$(LD) $(LDFLAGS) -o $@ $(RDFDBOBJ) @LIBS@
+		$(LD) $(LDSOFLAGS) -o $@ $(RDFDBOBJ) $(LIBS)
 turtle.@SO@:	turtle.o
-		$(LD) $(LDFLAGS) -o $@ turtle.o @LIBS@
+		$(LD) $(LDSOFLAGS) -o $@ turtle.o $(LIBS)
 
 turtle.o:	$(srcdir)/turtle.c $(srcdir)/turtle_chars.c
 
