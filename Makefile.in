@@ -41,6 +41,7 @@ install:	$(TARGETS) $(addprefix $(srcdir)/, $(LIBPL))
 		for f in $(DATA) $(LIBPL) README; do \
 		  $(INSTALL_DATA) $(srcdir)/$$f $(PLLIBDIR); \
 		done
+		$(PL) -f none -g true -t "make_library_index('$(DESTDIR)$(LIBDIR)')"
 		$(PL) -f none -g make -t halt
 
 ln-install::
@@ -64,7 +65,7 @@ uninstall::
 		(cd $(PLBASE)/library && rm -f $(LIBPL))
 		$(PL) -f none -g make -t halt
 
-rdf_db.o:	$(srcdir)/quote.c $(srcdir)/unicode_map.c
+rdf_db.o:	$(srcdir)/unicode_map.c
 
 ################################################################
 # Documentation

@@ -62,6 +62,8 @@
 #include "hash.h"
 #include "murmur.h"
 
+#define ERROR -1
+
 #undef UNLOCK
 
 static void md5_triple(triple *t, md5_byte_t *digest);
@@ -100,7 +102,7 @@ library uses plain malloc to facilitate malloc debuggers.
 #ifdef DIRECT_MALLOC
 
 #define rdf_malloc(db, size)		malloc(size)
-#define rdf_free(db, ptr, size)     	free(ptr)
+#define rdf_free(db, ptr, size)		free(ptr)
 #define rdf_realloc(db, ptr, old, new)  realloc(ptr, new)
 
 #else /*DIRECT_MALLOC*/
@@ -242,7 +244,7 @@ static atom_t	ATOM_subPropertyOf;
 
 static predicate_t PRED_call1;
 
-#define MATCH_EXACT 		0x01	/* exact triple match */
+#define MATCH_EXACT		0x01	/* exact triple match */
 #define MATCH_SUBPROPERTY	0x02	/* Use subPropertyOf relations */
 #define MATCH_SRC		0x04	/* Match graph location */
 #define MATCH_INVERSE		0x08	/* use symmetric match too */
@@ -2822,7 +2824,7 @@ The RDF triple format.  This format is intended for quick save and load
 and not for readability or exchange.  Parts are based on the SWI-Prolog
 Quick Load Format (implemented in pl-wic.c).
 
-	<file> 		::= <magic>
+	<file>		::= <magic>
 			    <version>
 			    ['S' <graph-name>]
 			    ['F' <graph-source>]
@@ -2831,10 +2833,10 @@ Quick Load Format (implemented in pl-wic.c).
 			    {<triple>}
 			    'E'
 
-	<magic> 	::= "RDF-dump\n"
-	<version> 	::= <integer>
+	<magic>		::= "RDF-dump\n"
+	<version>	::= <integer>
 
-	<md5>		::= <byte>* 		(16 bytes digest)
+	<md5>		::= <byte>*		(16 bytes digest)
 
 	<triple>	::= 'T'
 	                    <subject>
@@ -3114,8 +3116,10 @@ write_md5(rdf_db *db, IOSTREAM *out, atom_t src)
 
 static int
 save_db(rdf_db *db, IOSTREAM *out, atom_t src)
-{ triple *t;
+{ triple *t, p;
   save_context ctx;
+
+  memset(&p, 0, sizeof(p));
 
   if ( !RDLOCK(db) )
     return FALSE;
@@ -3128,13 +3132,19 @@ save_db(rdf_db *db, IOSTREAM *out, atom_t src)
     save_atom(db, out, src, &ctx);
     write_source(db, out, src, &ctx);
     write_md5(db, out, src);
+    p.graph = src;
+    p.indexed = BY_G;
+  } else
+  { p.indexed = BY_NONE;
   }
   if ( Sferror(out) )
   { RDUNLOCK(db);
     return FALSE;
   }
 
-  for(t = db->by_none; t; t = t->tp.next[ICOL(BY_NONE)])
+  for(t = db->table[ICOL(p.indexed)][triple_hash(db, &p, p.indexed)];
+      t;
+      t = t->tp.next[ICOL(p.indexed)])
   { if ( !t->erased &&
 	 (!src || t->graph == src) )
     { write_triple(db, out, t, &ctx);
@@ -4271,6 +4281,9 @@ unify_literal(term_t lit, literal *l)
 			 PL_TERM, v) )
       return TRUE;
 
+    if ( PL_exception(0) )
+      return FALSE;
+
     return PL_unify(lit, v);		/* allow rdf(X, Y, literal(foo)) */
   } else if ( PL_unify(lit, v) )
   { return TRUE;
@@ -4308,6 +4321,12 @@ unify_object(term_t object, triple *t)
 }
 
 
+/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+TRUE:  ok
+FALSE: failure
+ERROR: error
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+
 static int
 unify_triple(term_t subject, term_t pred, term_t object,
 	     term_t src, triple *t, int inversed)
@@ -4329,7 +4348,12 @@ unify_triple(term_t subject, term_t pred, term_t object,
        !PL_unify_atom(pred, p->name) ||
        !unify_object(object, t) ||
        (src && !unify_graph(src, t)) )
-  { PL_discard_foreign_frame(fid);
+  { if ( PL_exception(0) )
+    { PL_close_foreign_frame(fid);
+      return ERROR;
+    }
+
+    PL_discard_foreign_frame(fid);
     return FALSE;
   } else
   { PL_close_foreign_frame(fid);
@@ -4849,6 +4873,7 @@ static foreign_t
 rdf_assert4(term_t subject, term_t predicate, term_t object, term_t src)
 { rdf_db *db = DB;
   triple *t = new_triple(db);
+  int rc = TRUE;
 
   if ( !get_triple(db, subject, predicate, object, t) )
   { free_triple(db, t);
@@ -4873,12 +4898,12 @@ rdf_assert4(term_t subject, term_t predicate, term_t object, term_t src)
   if ( db->tr_first )
   { record_transaction(db, TR_ASSERT, t);
   } else
-  { link_triple(db, t);
+  { rc = link_triple(db, t);
     db->generation++;
   }
   WRUNLOCK(db);
 
-  return TRUE;
+  return rc;
 }
 
 
@@ -4915,11 +4940,11 @@ dec_active_queries(rdf_db *db)
 typedef struct search_state
 { rdf_db       *db;			/* our database */
   term_t	subject;		/* Prolog term references */
-  term_t 	object;
-  term_t 	predicate;
-  term_t 	src;
-  term_t 	realpred;
-  unsigned 	locked : 1;		/* State has been locked */
+  term_t	object;
+  term_t	predicate;
+  term_t	src;
+  term_t	realpred;
+  unsigned	locked : 1;		/* State has been locked */
   unsigned	allocated : 1;		/* State has been allocated */
   unsigned	flags;			/* Misc flags controlling search */
   atom_t	prefix;			/* prefix and like search */
@@ -5052,7 +5077,7 @@ init_search_state(search_state *state)
     }
   } else
   { state->cursor = state->db->table[ICOL(p->indexed)]
-    				    [triple_hash(state->db, p, p->indexed)];
+				    [triple_hash(state->db, p, p->indexed)];
   }
 
   return TRUE;
@@ -5102,6 +5127,19 @@ static int
 next_search_state(search_state *state)
 { triple *t = state->cursor;
   triple *p = &state->pattern;
+  term_t retpred;
+  int unify_pred;
+
+  if ( state->realpred )
+  { retpred = state->realpred;
+    if ( PL_is_variable(state->predicate) )
+    { if ( !PL_unify(state->predicate, retpred) )
+	return FALSE;
+    }
+  } else
+  { retpred = state->predicate;
+    unify_pred = FALSE;
+  }
 
 retry:
   for( ; t; t = t->tp.next[ICOL(p->indexed)])
@@ -5116,14 +5154,13 @@ retry:
     }
 
     if ( match_triples(t, p, state->flags) )
-    { term_t retpred = state->realpred ? state->realpred : state->predicate;
-      if ( !unify_triple(state->subject, retpred, state->object,
-			 state->src, t, p->inversed) )
+    { int rc;
+
+      if ( (rc=unify_triple(state->subject, retpred, state->object,
+			    state->src, t, p->inversed)) == FALSE )
 	continue;
-      if ( state->realpred && PL_is_variable(state->predicate) )
-      { if ( !PL_unify(state->predicate, retpred) )
-	  return FALSE;
-      }
+      if ( rc == ERROR )
+	return FALSE;				/* makes rdf/3 return FALSE */
 
       t=t->tp.next[ICOL(p->indexed)];
     inv_alt:
@@ -5319,7 +5356,7 @@ rdf_estimate_complexity(term_t subject, term_t predicate, term_t object,
   { if ( rc == -1 )
     { return FALSE;			/* error */
     } else
-    { return PL_unify_integer(complexity, 0); 	/* no predicate */
+    { return PL_unify_integer(complexity, 0);	/* no predicate */
     }
   }
 
@@ -5685,7 +5722,8 @@ do_broadcast(term_t term, long mask)
       if ( !(cb->mask & mask) )
 	continue;
 
-      qid = PL_open_query(NULL, PL_Q_CATCH_EXCEPTION, cb->pred, term);
+      if ( !(qid = PL_open_query(NULL, PL_Q_CATCH_EXCEPTION, cb->pred, term)) )
+	return FALSE;
       if ( !PL_next_solution(qid) && (ex = PL_exception(qid)) )
       { term_t av = PL_new_term_refs(2);
 
@@ -6508,6 +6546,8 @@ rdf_reachable(term_t subj, term_t pred, term_t obj,
 	    return FALSE;
 	}
 	is_det = PL_is_ground(obj);
+	if ( a.pattern.object_is_literal )
+	  return FALSE;			/* rdf_reachable(literal(...),?,?) */
 	target_term = obj;
       } else if ( !PL_is_variable(obj) )	/* obj .... subj */
       {	switch(get_partial_triple(db, 0, pred, obj, 0, &a.pattern))
@@ -6526,7 +6566,7 @@ rdf_reachable(term_t subj, term_t pred, term_t obj,
 	return FALSE;
       if ( !update_hash(db, TRUE) )
 	return FALSE;
-      if ( (a.pattern.indexed & BY_S) ) 	/* subj ... */
+      if ( (a.pattern.indexed & BY_S) )		/* subj ... */
 	append_agenda(db, &a, a.pattern.subject, 0);
       else
 	append_agenda(db, &a, a.pattern.object.resource, 0);
@@ -6671,7 +6711,7 @@ unify_statistics(rdf_db *db, term_t key, functor_t f)
   { return PL_unify_term(key,
 			 PL_FUNCTOR, f,
 			   PL_INT, db->gc_count,
-			   PL_FLOAT, db->gc_time); 	/* time spent */
+			   PL_FLOAT, db->gc_time);	/* time spent */
   } else if ( f == FUNCTOR_rehash2 )
   { return PL_unify_term(key,
 			 PL_FUNCTOR, f,
@@ -6884,12 +6924,6 @@ rdf_version(term_t v)
 
 
 		 /*******************************
-		 *	     MORE STUFF		*
-		 *******************************/
-
-#include "quote.c"
-
-		 /*******************************
 		 *	     REGISTER		*
 		 *******************************/
 
@@ -7032,7 +7066,6 @@ install_rdf_db()
   PL_register_foreign("rdf_md5",	2, rdf_md5,	    0);
   PL_register_foreign("rdf_atom_md5",	3, rdf_atom_md5,    0);
 #endif
-  PL_register_foreign("rdf_quote_uri",	2, rdf_quote_uri,   0);
 
 #ifdef O_DEBUG
   PL_register_foreign("rdf_debug",      1, rdf_debug,       0);

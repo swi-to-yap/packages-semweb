@@ -146,6 +146,7 @@
 :- use_module(rdf_cache).
 
 :- use_foreign_library(foreign(rdf_db)).
+:- public rdf_print_predicate_cloud/1.	% print matrix of reachable predicates
 
 :- meta_predicate
 	rdf_transaction(0),
@@ -461,8 +462,8 @@ mk_global(NS:Local, Global) :-
 	rdf(r,r,o,?),
 	rdf_assert(r,r,o,+),
 	rdf_retractall(r,r,o,?),
-	rdf_reachable(r,r,r),
-	rdf_reachable(r,r,r,+,?),
+	rdf_reachable(r,r,o),
+	rdf_reachable(r,r,o,+,?),
 	rdf_update(r,r,o,t),
 	rdf_update(r,r,o,+,t),
 	rdf_equal(r,r),
@@ -2269,6 +2270,16 @@ rdf_split_url(Prefix, Local, URL) :-
 
 rdf_url_namespace(URL, Prefix) :-
 	iri_xml_namespace(URL, Prefix).
+
+%%	rdf_quote_uri(IRI, URI) is det.
+%
+%	Quote an IRI as a URI by using %-encoding where needed.
+%
+%	@deprecated	Quoting is moved to library(uri). This predicate is
+%			mapped to uri_iri/2 (with reversed arguments).
+
+rdf_quote_uri(IRI, URI) :-
+	uri_iri(URI, IRI).
 
 
 		 /*******************************
