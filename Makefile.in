@@ -41,7 +41,7 @@ install:	$(TARGETS) $(addprefix $(srcdir)/, $(LIBPL))
 		for f in $(DATA) $(LIBPL) README; do \
 		  $(INSTALL_DATA) $(srcdir)/$$f $(PLLIBDIR); \
 		done
-		$(PL) -f none -g true -t "make_library_index('$(DESTDIR)$(LIBDIR)')"
+		#$(PL) -f none -g true -t "make_library_index('$(DESTDIR)$(LIBDIR)')"
 		$(PL) -f none -g make -t halt
 
 ln-install::
