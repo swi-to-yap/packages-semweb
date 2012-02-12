@@ -47,6 +47,31 @@
 :- meta_predicate
 	rdf_process_turtle(+,2,+).
 
+:- predicate_options(rdf_load_turtle/3, 3,
+		     [pass_to(rdf_read_turtle/3, 3)]).
+:- predicate_options(rdf_process_turtle/3, 3,
+		     [ anon_prefix(atom),
+		       base_uri(atom),
+		       base_used(-atom),
+		       db(atom),
+		       error_count(-integer),
+		       namespaces(-list),
+		       on_error(oneof([warning,error])),
+		       prefixes(-list),
+		       resources(oneof([uri,iri]))
+		     ]).
+:- predicate_options(rdf_read_turtle/3, 3,
+		     [ anon_prefix(atom),
+		       base_uri(atom),
+		       base_used(-atom),
+		       db(atom),
+		       error_count(-integer),
+		       namespaces(-list),
+		       on_error(oneof([warning,error])),
+		       prefixes(-list),
+		       resources(oneof([uri,iri]))
+		     ]).
+
 /** <module> Turtle: Terse RDF Triple Language
 
 This module implements the Turtle  language   for  representing  the RDF
@@ -234,7 +259,7 @@ step_error(State, Error) :-
 
 open_input(stream(Stream), Stream, true) :- !,
 	stream_property(Stream, encoding(Old)),
-	(   Old == utf8
+	(   unicode_encoding(Old)
 	->  Close = true
 	;   set_stream(Stream, encoding(utf8)),
 	    Close = set_stream(Stream, encoding(Old))
@@ -252,6 +277,11 @@ open_input(File, Stream, close(Stream)) :-
 			     extensions([ttl, ''])
 			   ]),
 	open(Path, read, Stream, [encoding(utf8)]).
+
+unicode_encoding(utf8).
+unicode_encoding(wchar_t).
+unicode_encoding(unicode_be).
+unicode_encoding(unicode_le).
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 The parser is a two-stage processor. The  first reads the raw file input

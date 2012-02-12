@@ -92,6 +92,13 @@ move the .new to the plain snapshot name as a means of recovery.
 :- meta_predicate
 	no_agc(0).
 
+:- predicate_options(rdf_attach_db/2, 2,
+		     [ concurrency(positive_integer),
+		       max_open_journals(positive_integer),
+		       silent(oneof([true,false,brief])),
+		       log_nested_transactions(boolean)
+		     ]).
+
 %%	rdf_attach_db(+Directory, +Options)
 %
 %	Start persistent operations using Directory   as  place to store
@@ -509,7 +516,7 @@ monitor(retract(S,P,O,DB)) :-
 	sync_journal(DB, Fd).
 monitor(update(S,P,O,DB:Line,Action)) :- !,
 	\+ blocked_db(DB, _),
-	(   Action = source(NewDB)
+	(   Action = graph(NewDB)
 	->  monitor(assert(S,P,O,NewDB)),
 	    monitor(retract(S,P,O,DB:Line))
 	;   journal_fd(DB, Fd),
@@ -518,7 +525,7 @@ monitor(update(S,P,O,DB:Line,Action)) :- !,
 	).
 monitor(update(S,P,O,DB,Action)) :-
 	\+ blocked_db(DB, _),
-	(   Action = source(NewDB)
+	(   Action = graph(NewDB)
 	->  monitor(assert(S,P,O,NewDB)),
 	    monitor(retract(S,P,O,DB))
 	;   journal_fd(DB, Fd),

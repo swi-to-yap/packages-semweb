@@ -10,14 +10,16 @@
 #
 #	ln-install		Install with symbolic links
 #
-# Author: Jan Wielemaker (wielemak@science.uva.nl)
+# Author: Jan Wielemaker (J.Wielemaker@cs.vu.nl)
 ################################################################
 
 PACKAGE=semweb
+DOC=semweb
 include ../Makefile.defs
-
-
-include $(srcdir)/common.mk
+include common.mk
+CFLAGS+= -I.
+LIBDIR=$(PLBASE)/library/semweb
+PKGDOC=$(PKGDOCDIR)/semweb
 
 TARGETS=	rdf_db.@SO@ turtle.@SO@
 
@@ -31,22 +33,25 @@ rdf_db.@SO@:	$(RDFDBOBJ)
 turtle.@SO@:	turtle.o
 		$(LD) $(LDSOFLAGS) -o $@ turtle.o $(LIBS)
 
-turtle.o:	$(srcdir)/turtle.c $(srcdir)/turtle_chars.c
+turtle.o:	turtle.c turtle_chars.c
 
-install:	$(TARGETS) $(addprefix $(srcdir)/, $(LIBPL))
+install:	$(TARGETS) $(LIBPL)
+		mkdir -p $(DESTDIR)$(LIBDIR)
 		mkdir -p $(DESTDIR)$(SOLIBDIR)
 		for f in $(TARGETS); do \
-		  $(INSTALL) -m 755 $$f $(SOLIBDIR); \
+		  $(INSTALL_PROGRAM) $$f $(DESTDIR)$(SOLIBDIR); \
 		done
-		for f in $(DATA) $(LIBPL) README; do \
-		  $(INSTALL_DATA) $(srcdir)/$$f $(PLLIBDIR); \
+		for f in $(DATA) $(LIBPL); do \
+		  $(INSTALL_DATA) $$f $(DESTDIR)$(LIBDIR); \
 		done
-		#$(PL) -f none -g true -t "make_library_index('$(DESTDIR)$(LIBDIR)')"
-		$(PL) -f none -g make -t halt
+		$(INSTALL_DATA) README $(DESTDIR)$(LIBDIR)/README$(TXTEXT)
+		$(MKPKGINDEX)
+		$(MKINDEX)
 
 ln-install::
 		$(MAKE) INSTALL=../ln-install \
 			INSTALL_DATA=../ln-install \
+			INSTALL_PROGRAM=../ln-install \
 			install
 
 rpm-install:	install
@@ -61,39 +66,41 @@ pdf-install::
 		$(INSTALL) -m 644 $(DOC).pdf $(DESTDIR)$(PKGDOC)
 
 uninstall::
-		(cd $(PLBASE)/lib/$(PLARCH) && rm -f $(TARGETS))
+		(cd $(SOLIBDIR) && rm -f $(TARGETS))
 		(cd $(PLBASE)/library && rm -f $(LIBPL))
-		$(PL) -f none -g make -t halt
+		$(MKINDEX)
 
-rdf_db.o:	$(srcdir)/unicode_map.c
+rdf_db.o:	unicode_map.c
 
 ################################################################
 # Documentation
 ################################################################
 
-rdfturtle.tex:	rdf_turtle.pl
-		$(PLTOTEX) --section 'library(semweb/rdf_turtle)'
-rdfturtlewrite.tex:	rdf_turtle_write.pl
-		$(PLTOTEX) --section 'library(semweb/rdf_turtle_write)'
-rdfcompare.tex:	rdf_compare.pl
-		$(PLTOTEX) --section 'library(semweb/rdf_compare)'
-rdfportray.tex:	rdf_portray.pl
-		$(PLTOTEX) --section 'library(semweb/rdf_portray)'
-sparqlclient.tex:	sparql_client.pl
-		$(PLTOTEX) --section 'library(semweb/sparql_client)'
+TEXEXTRA=	rdfturtle.tex rdfturtlewrite.tex rdfcompare.tex \
+                rdfportray.tex rdflib.tex sparqlclient.tex
 
-.doc.tex:
-		$(DOCTOTEX) $*.doc > $*.tex
+$(TEX):		$(TEXEXTRA)
+
+rdfturtle.tex:  rdf_turtle.pl
+		$(PLTOTEX) --section 'library(semweb/rdf_turtle)'
+rdfturtlewrite.tex:     rdf_turtle_write.pl
+		$(PLTOTEX) --section 'library(semweb/rdf_turtle_write)'
+rdfcompare.tex: rdf_compare.pl
+		$(PLTOTEX) --section 'library(semweb/rdf_compare)'
+rdfportray.tex: rdf_portray.pl
+		$(PLTOTEX) --section 'library(semweb/rdf_portray)'
+sparqlclient.tex:       sparql_client.pl
+		$(PLTOTEX) --section 'library(semweb/sparql_client)'
 
 ################################################################
 # Check
 ################################################################
 
 check::
-		( cd $(srcdir) && $(PL) -q -f test_rdf_db.pl -g test_rdf_db,halt -t 'halt(1)' )
-		( cd $(srcdir) && $(PL) -q -f litmap_test.pl -g test,halt -t 'halt(1)' )
-		( cd $(srcdir) && $(PL) -q -f test.pl -g run_tests,halt -t 'halt(1)' )
-		( cd $(srcdir) && $(PL) -q -f test_turtle.pl -g test_turtle,halt -t 'halt(1)' )
+		$(PL) -q -f test_rdf_db.pl -g test_rdf_db,halt -t 'halt(1)'
+		$(PL) -q -f litmap_test.pl -g test,halt -t 'halt(1)'
+		$(PL) -q -f test.pl -g run_tests,halt -t 'halt(1)'
+		$(PL) -q -f test_turtle.pl -g test_turtle,halt -t 'halt(1)'
 
 
 ################################################################
