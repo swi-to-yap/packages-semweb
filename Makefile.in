@@ -18,7 +18,7 @@ DOC=semweb
 include ../Makefile.defs
 include @srcdir@/common.mk
 CFLAGS+= -I.
-LIBDIR=$(PLBASE)/library/semweb
+LIBDIR=$(PLLIBDIR)/semweb
 PKGDOC=$(PKGDOCDIR)/semweb
 
 TARGETS=	rdf_db.@SO@ turtle.@SO@
@@ -81,15 +81,15 @@ TEXEXTRA=	rdfturtle.tex rdfturtlewrite.tex rdfcompare.tex \
 
 $(TEX):		$(TEXEXTRA)
 
-rdfturtle.tex:  rdf_turtle.pl
+rdfturtle.tex:  $(srcdir)/rdf_turtle.pl
 		$(PLTOTEX) --section 'library(semweb/rdf_turtle)'
-rdfturtlewrite.tex:     rdf_turtle_write.pl
+rdfturtlewrite.tex:     $(srcdir)/rdf_turtle_write.pl
 		$(PLTOTEX) --section 'library(semweb/rdf_turtle_write)'
-rdfcompare.tex: rdf_compare.pl
+rdfcompare.tex: $(srcdir)/rdf_compare.pl
 		$(PLTOTEX) --section 'library(semweb/rdf_compare)'
-rdfportray.tex: rdf_portray.pl
+rdfportray.tex: $(srcdir)/rdf_portray.pl
 		$(PLTOTEX) --section 'library(semweb/rdf_portray)'
-sparqlclient.tex:       sparql_client.pl
+sparqlclient.tex:       $(srcdir)/sparql_client.pl
 		$(PLTOTEX) --section 'library(semweb/sparql_client)'
 
 ################################################################
@@ -97,10 +97,10 @@ sparqlclient.tex:       sparql_client.pl
 ################################################################
 
 check::
-		$(PL) -q -f test_rdf_db.pl -g test_rdf_db,halt -t 'halt(1)'
-		$(PL) -q -f litmap_test.pl -g test,halt -t 'halt(1)'
-		$(PL) -q -f test.pl -g run_tests,halt -t 'halt(1)'
-		$(PL) -q -f test_turtle.pl -g test_turtle,halt -t 'halt(1)'
+		(cd $(srcdir) && $(PL) -q -f test_rdf_db.pl -g test_rdf_db,halt -t 'halt(1)' )
+		(cd $(srcdir) && $(PL) -q -f litmap_test.pl -g test,halt -t 'halt(1)' )
+		(cd $(srcdir) &&$(PL) -q -f test.pl -g run_tests,halt -t 'halt(1)' )
+		(cd $(srcdir) && $(PL) -q -f test_turtle.pl -g test_turtle,halt -t 'halt(1)' )
 
 
 ################################################################
