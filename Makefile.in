@@ -29,9 +29,9 @@ RDFDBOBJ=	rdf_db.o atom.o lock.o md5.o avl.o atom_map.o debug.o \
 all:		$(TARGETS)
 
 rdf_db.@SO@:	$(RDFDBOBJ)
-		$(LD) $(LDSOFLAGS) -o $@ $(RDFDBOBJ) $(LIBS)
+		$(LD) $(LDSOFLAGS) -o $@ $(RDFDBOBJ) $(LIBS) $(LIBPLSO)
 turtle.@SO@:	turtle.o
-		$(LD) $(LDSOFLAGS) -o $@ turtle.o $(LIBS)
+		$(LD) $(LDSOFLAGS) -o $@ turtle.o $(LIBS) $(LIBPLSO)
 
 turtle.o:	$(srcdir)/turtle.c $(srcdir)/turtle_chars.c
 
@@ -57,13 +57,13 @@ ln-install::
 rpm-install:	install
 
 html-install::
-		mkdir -p $(DESTDIR)$(PKGDOC)
-		$(INSTALL) -m 644 $(DOC).html $(DESTDIR)$(PKGDOC)
-		$(INSTALL) -m 644 modules.gif $(DESTDIR)$(PKGDOC)
+		mkdir -p $(DESTDIR)$(PKGDOCDIR)
+		$(INSTALL) -m 644 $(DOC).html $(DESTDIR)$(PKGDOCDIR)
+		$(INSTALL) -m 644 modules.gif $(DESTDIR)$(PKGDOCDIR)
 
 pdf-install::
-		mkdir -p $(DESTDIR)$(PKGDOC)
-		$(INSTALL) -m 644 $(DOC).pdf $(DESTDIR)$(PKGDOC)
+		mkdir -p $(DESTDIR)$(PKGDOCDIR)
+		$(INSTALL) -m 644 $(DOC).pdf $(DESTDIR)$(PKGDOCDIR)
 
 uninstall::
 		(cd $(SOLIBDIR) && rm -f $(TARGETS))
