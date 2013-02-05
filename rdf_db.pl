@@ -951,7 +951,7 @@ rdf_load([H|T], Options) :- !,
 	rdf_load(T, Options).
 rdf_load(Spec, M:Options) :-
 	must_be(list, Options),
-	statistics(cputime, T0),
+	statistics(cputime, [T0,_]),
 	rdf_open_input(Spec, In, Cleanup, SourceURL, Graph, Modified,
 		       Format, Options),
 	return_modified(Modified, Options),
@@ -1282,7 +1282,7 @@ rdf_load_stream(triples, Stream, Options) :- !,
 
 report_loaded(none, _, _, _, _, _) :- !.
 report_loaded(Action, Source, DB, Triples, T0, Options) :-
-	statistics(cputime, T1),
+	statistics(cputime, [T1,_]),
 	Time is T1 - T0,
 	(   option(silent(true), Options)
 	->  Level = silent
