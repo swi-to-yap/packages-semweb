@@ -37,7 +37,7 @@
 	  ]).
 :- use_module(library(assoc)).
 :- use_module(library(option)).
-:- use_module(library('semweb/rdf_db')).
+:- use_module(library(semweb/rdf_db)).
 :- use_module(library(debug)).
 :- use_module(library(uri)).
 :- use_module(library(record)).
@@ -148,6 +148,10 @@ one of the extensions =|.ttl|=, =|.n3|= or =|.nt|=.
 %		* error_count(-Count)
 %		If on_error(warning) is active, this option cane be
 %		used to retrieve the number of generated errors.
+%
+%	@param	Input is one of stream(Stream), atom(Atom), a =http=,
+%		=https= or =file= url or a filename specification as
+%		accepted by absolute_file_name/3.
 
 rdf_read_turtle(In, Triples, Options) :-
 	open_input(In, Stream, Close),
@@ -267,10 +271,18 @@ open_input(stream(Stream), Stream, true) :- !,
 open_input(Stream, Stream, Close) :-
 	is_stream(Stream), !,
 	open_input(stream(Stream), Stream, Close).
+open_input(atom(Atom), Stream, close(Stream)) :- !,
+	atom_to_memory_file(Atom, MF),
+	open_memory_file(MF, read, Stream, [free_on_close(true)]).
 open_input(URL, Stream, close(Stream)) :-
-	sub_atom(URL, 0, _, _, 'http://'), !,
+	(   sub_atom(URL, 0, _, _, 'http://')
+	;   sub_atom(URL, 0, _, _, 'https://')
+	), !,
 	http_open(URL, Stream, []),
 	set_stream(Stream, encoding(utf8)).
+open_input(URL, Stream, close(Stream)) :-
+	uri_file_name(URL, Path), !,
+	open(Path, read, Stream, [encoding(utf8)]).
 open_input(File, Stream, close(Stream)) :-
 	absolute_file_name(File, Path,
 			   [ access(read),
@@ -295,6 +307,8 @@ init_state(In, Stream, Options, State) :-
 	(   option(base_uri(BaseURI), Options)
 	->  true
 	;   In = stream(_)
+	->  BaseURI = []
+	;   In = atom(_)
 	->  BaseURI = []
 	;   uri_is_global(In),
 	    \+ is_absolute_file_name(In)	% Avoid C:Path in Windows
@@ -356,7 +370,9 @@ triples(State, []) -->
 triples(State, []) -->
 	[ '@', name(prefix), ':' ], !,
 	iri(State, URI),
-	{ set_base_uri_of_ttl_state(URI, State)
+	{ ttl_state_prefix_map(State, Map0),
+	  put_assoc('', Map0, URI, Map),
+	  set_prefix_map_of_ttl_state(Map, State)
 	}.
 triples(State, []) -->
 	[ '@', name(base) ], !,
@@ -462,28 +478,46 @@ resource(State, IRI) -->
 	iri(State, IRI), !.
 resource(State, IRI) -->
 	[ :(Name) ], !,
-	{ ttl_state_base_uri(State, Base),
-	  atom_concat(Base, Name, URI),
-	  uri_iri(State, URI, IRI)
-	}.
+	{ prefix_iri(:(Name), State, IRI) }.
 resource(State, IRI) -->
 	[ name(Prefix), : ], !,
-	{ ttl_state_prefix_map(State, Map),
-	  get_assoc(Prefix, Map, IRI)
-	}.
+	{ prefix_iri(prefix(Prefix), State, IRI) }.
 resource(State, IRI) -->
 	[ Prefix:Name ], !,
-	{ ttl_state_prefix_map(State, Map),
-	  (   get_assoc(Prefix, Map, Base)
-	  ->  atom_concat(Base, Name, URI),
-	      uri_iri(State, URI, IRI)
-	  ;   throw(error(existence_error(prefix, Prefix), _))
-	  )
-	}.
-resource(State, BaseIRI) -->
+	{ prefix_iri(Prefix:Name, State, IRI) }.
+resource(State, IRI) -->
 	[ : ], !,
-	{ ttl_state_base_uri(State, BaseIRI)
-	}.
+	{ prefix_iri(:, State, IRI) }.
+
+%%	prefix_iri(+PrefixSpec, +State, -IRI).
+
+prefix_iri(:(Name), State, IRI) :-		% :<prefix>
+	prefix('', Base, State),
+	atom_concat(Base, Name, URI),
+	uri_iri(State, URI, IRI).
+prefix_iri(prefix(Prefix), State, IRI) :-	% <prefix>:
+	prefix(Prefix, IRI, State).
+prefix_iri(Prefix:Name, State, IRI) :-		% <prefix>:<local>
+	prefix(Prefix, Base, State),
+	atom_concat(Base, Name, URI),
+	uri_iri(State, URI, IRI).
+prefix_iri(:, State, IRI) :-			% :
+	prefix('', URI, State),
+	uri_iri(State, URI, IRI).
+
+prefix(Prefix, URI, State) :-
+	ttl_state_prefix_map(State, Map),
+	get_assoc(Prefix, Map, URI), !.
+prefix(Prefix, URI, _) :-
+	predefined(Prefix), !,
+	rdf_current_ns(Prefix, URI).
+prefix(Prefix, _, _) :-
+	throw(error(existence_error(prefix, Prefix), _)).
+
+predefined(rdf).
+predefined(rdfs).
+predefined(owl).
+predefined(xsd).
 
 uri_iri(State, URI, IRI) :-
 	(   ttl_state_resources(State, uri)
@@ -558,20 +592,36 @@ anonid(State, _NodeId, Node) :-
 	anonid(State, Node).
 anonid(_State, NodeId, node(NodeId)).
 
-mk_object(type(Prefix:Name, Value), State, literal(type(Type, Value))) :- !,
-	  ttl_state_prefix_map(State, Map),
-	  get_assoc(Prefix, Map, Base),
-	  atom_concat(Base, Name, Type).
-mk_object(type(relative_uri(Rel), Value), State, literal(type(Type, Value))) :- !,
-	  ttl_state_base_uri(State, Base),
-	  (   Rel == ''			% must be in global_url?
-	  ->  Type = Base
-	  ;   uri_normalized_iri(Rel, Base, Type)
-	  ).
-mk_object(type(:(Name), Value), State, literal(type(Type, Value))) :- !,
-	  ttl_state_base_uri(State, Base),
-	  atom_concat(Base, Name, Type).
+mk_object(type(TypeSpec, Value0), State, literal(type(TypeIRI, Value))) :- !,
+	type_iri(TypeSpec, State, TypeIRI),
+	convert_literal(TypeIRI, Value0, Value).
 mk_object(Value, _State, literal(Value)).
+
+type_iri(relative_uri(Rel), State, TypeIRI) :- !,
+	ttl_state_base_uri(State, Base),
+	(   Rel == ''			% must be in global_url?
+	->  TypeIRI = Base
+	;   uri_normalized_iri(Rel, Base, TypeIRI)
+	).
+type_iri(Spec, State, TypeIRI) :-
+	prefix_iri(Spec, State, TypeIRI).
+
+
+%%	convert_literal(+Type, +Text, -Value) is det.
+%
+%	Convert  rdf:XMLLiteral  values  into  the   XML  DOM.  This  is
+%	consistent with the XML based version. Unclear whether this is a
+%	good idea.
+
+:- rdf_meta
+	convert_literal(r,+,-).
+
+convert_literal(rdf:'XMLLiteral', Text, DOM) :-
+	atom_to_memory_file(Text, MF),
+	open_memory_file(MF, read, In, [free_on_close(true)]),
+	load_structure(stream(In), DOM, [dialect(xml)]),
+	close(In).
+convert_literal(_, Value, Value).
 
 syntax_rule(State, Error) -->
 	error_tokens(7, Tokens),
@@ -934,7 +984,9 @@ stream_file_name(_, '<no file>').
 
 rdf_db:rdf_load_stream(turtle, Stream, _Module:Options) :-
 	rdf_db:graph(Options, Id),
-	rdf_transaction(rdf_process_turtle(Stream, assert_triples, Options),
+	rdf_transaction((  rdf_process_turtle(Stream, assert_triples, Options),
+			   rdf_set_graph(Id, modified(false))
+			),
 			parse(Id)).
 
 assert_triples([], _).
@@ -944,4 +996,3 @@ assert_triples([rdf(S,P,O)|T], Location) :-
 
 rdf_db:rdf_file_type(ttl, turtle).
 rdf_db:rdf_file_type(n3,  turtle).	% not really, but good enough
-rdf_db:rdf_file_type(nt,  turtle).	% not really, but good enough

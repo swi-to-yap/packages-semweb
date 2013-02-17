@@ -61,7 +61,7 @@ being flexible to ordering of tokens.
 
 setting(verbose(false)).		% print progress messages
 setting(index_threads(1)).		% # threads for creating the index
-setting(index(default)).		% Use a thread for incremental updates
+setting(index(thread(1))).		% Use a thread for incremental updates
 
 %%	rdf_set_literal_index_option(+Options:list)
 %
@@ -390,11 +390,8 @@ token_index(Map) :-
 		    old_literal
 		  ],
 	(   setting(index(default))
-	->  (   current_prolog_flag(cpu_count, N), N > 1
-	    ->	create_update_literal_thread(1),
-		rdf_monitor(thread_monitor_literal, Monitor)
-	    ;	rdf_monitor(monitor_literal, Monitor)
-	    )
+	->  create_update_literal_thread(1),
+	    rdf_monitor(thread_monitor_literal, Monitor)
 	;   setting(index(thread(N)))
 	->  create_update_literal_thread(N),
 	    rdf_monitor(thread_monitor_literal, Monitor)
@@ -456,7 +453,7 @@ clean_token_index :-
 		 *	  THREADED UPDATE	*
 		 *******************************/
 
-%	create_update_literal_thread(+Threads)
+%%	create_update_literal_thread(+Threads)
 %
 %	Setup literal monitoring using threads.  While loading databases
 %	through rdf_attach_db/2 from  rdf_persistency.pl,   most  of the
@@ -471,24 +468,53 @@ create_update_literal_thread(Threads) :-
 			     [ alias(rdf_literal_monitor_queue),
 			       max_size(10000)
 			     ]),
-	forall(between(1, Threads, N),
-	       (   atom_concat(rdf_literal_monitor_, N, Alias),
-		   thread_create(monitor_literals, _,
-				 [ alias(Alias)
-				 ])
-	       )).
+	forall(between(1, Threads, _),
+	       create_index_worker(initial)).
 
-monitor_literals :-
+:- dynamic
+	index_worker_id/1.
+
+create_index_worker(Status) :-
+	(   retract(index_worker_id(Id0))
+	->  true
+	;   Id0 = 1
+	),
+	succ(Id0, Id1),
+	assertz(index_worker_id(Id1)),
+	atom_concat(rdf_literal_monitor_, Id0, Alias),
+	thread_create(monitor_literals(Status), _,
+		      [ alias(Alias)
+		      ]).
+
+monitor_literals(initial) :-
 	set_prolog_flag(agc_margin, 0),	% we don't create garbage
 	repeat,
 	    thread_get_message(rdf_literal_monitor_queue, Literal),
 	    register_literal(Literal),
 	fail.
+monitor_literals(extra) :-
+	set_prolog_flag(agc_margin, 0),
+	repeat,
+	    (	thread_get_message(rdf_literal_monitor_queue, Literal,
+				   [ timeout(1)
+				   ])
+	    ->	register_literal(Literal),
+		fail
+	    ;	!
+	    ),
+	thread_self(Me),
+	thread_detach(Me).
 
 thread_monitor_literal(new_literal(Literal)) :- !,
 	thread_send_message(rdf_literal_monitor_queue, Literal).
 thread_monitor_literal(Action) :- !,
 	monitor_literal(Action).
+
+check_index_workers(Alias) :-
+	message_queue_property(Queue, alias(Alias)),
+	message_queue_property(Queue, size(Size)),
+	Size > 5000, !,
+	with_mutex(create_index_worker, create_index_worker(extra)).
 
 
 		 /*******************************
@@ -524,7 +550,8 @@ add_tokens([H|T], Literal, Map) :-
 	->  true
 	;   forall(new_token(H), true),
 	    (	Keys mod 1000 =:= 0
-	    ->	progress(Map, 'Tokens')
+	    ->	progress(Map, 'Tokens'),
+		check_index_workers(rdf_literal_monitor_queue)
 	    ;	true
 	    )
 	),

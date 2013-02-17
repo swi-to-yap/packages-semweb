@@ -1,11 +1,10 @@
-/*  $Id$
-
-    Part of SWI-Prolog
+/*  Part of SWI-Prolog
 
     Author:        Jan Wielemaker
-    E-mail:        wielemak@science.uva.nl
+    E-mail:        J.Wielemaker@vu.nl
     WWW:           http://www.swi-prolog.org
-    Copyright (C): 1985-2007, University of Amsterdam
+    Copyright (C): 2002-2012, University of Amsterdam
+			      VU University Amsterdam
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License
@@ -31,20 +30,22 @@
 
 :- module(rdf_persistency,
 	  [ rdf_attach_db/2,		% +Directory, +Options
-	    rdf_detach_db/0,		% +Detach current DB
+	    rdf_detach_db/0,		% +Detach current Graph
 	    rdf_current_db/1,		% -Directory
-	    rdf_persistency/2,		% +DB, +Bool
+	    rdf_persistency/2,		% +Graph, +Bool
 	    rdf_flush_journals/1,	% +Options
-	    rdf_journal_file/2,		% ?DB, ?JournalFile
-	    rdf_db_to_file/2		% ?DB, ?FileBase
+	    rdf_journal_file/2,		% ?Graph, ?JournalFile
+	    rdf_snapshot_file/2,	% ?Graph, ?SnapshotFile
+	    rdf_db_to_file/2		% ?Graph, ?FileBase
 	  ]).
-:- use_module(library('semweb/rdf_db')).
+:- use_module(library(semweb/rdf_db)).
+:- use_module(library(filesex)).
 :- use_module(library(lists)).
-:- use_module(library(url)).
+:- use_module(library(uri)).
 :- use_module(library(debug)).
 :- use_module(library(error)).
 :- use_module(library(thread)).
-:- use_module(library(pairs)).
+:- use_module(library(apply)).
 
 
 /** <module> RDF persistency plugin
@@ -67,8 +68,14 @@ is restored by loading  the  snapshot   and  replaying  the journal. The
 predicate rdf_flush_journals/1 can be used to create fresh snapshots and
 delete the journals.
 
-@tbd if there is a complete `.new'   snapshot  and no journal, we should
-move the .new to the plain snapshot name as a means of recovery.
+@tbd If there is a complete `.new'   snapshot  and no journal, we should
+     move the .new to the plain snapshot name as a means of recovery.
+
+@tbd Backup of each graph using one or two files is very costly if there
+     are many graphs.  Although the currently used subdirectories avoid
+     hitting OS limits early, this is still not ideal. Probably we
+     should collect (small, older?) files and combine them into a single
+     quick load file.  We could call this (similar to GIT) a `pack'.
 
 @see	rdf_edit.pl
 */
@@ -78,14 +85,12 @@ move the .new to the plain snapshot name as a means of recovery.
 	rdf_lock/2,
 	rdf_option/1,
 	source_journal_fd/2,
-	db_file_base/2,
 	file_base_db/2.
 :- dynamic
 	rdf_directory/1,		% Absolute path
 	rdf_lock/2,			% Dir, Lock
 	rdf_option/1,			% Defined options
 	source_journal_fd/2,		% DB, JournalFD
-	db_file_base/2,			% DB, FileBase
 	file_base_db/2.			% FileBase, DB
 
 :- meta_predicate
@@ -119,6 +124,10 @@ move the .new to the plain snapshot name as a means of recovery.
 %		* max_open_journals(+Count)
 %		Maximum number of journals kept open.  If not provided,
 %		the default is 10.  See limit_fd_pool/0.
+%
+%		* directory_levels(+Count)
+%		Number of levels of intermediate directories for storing
+%		the graph files.  Default is 2.
 %
 %		* silent(+BoolOrBrief)
 %		If =true= (default =false=), do not print informational
@@ -172,6 +181,7 @@ assert_options([H|T]) :-
 
 option_type(concurrency(X),		must_be(positive_integer, X)).
 option_type(max_open_journals(X),	must_be(positive_integer, X)).
+option_type(directory_levels(X),	must_be(positive_integer, X)).
 option_type(silent(X),	       must_be(oneof([true,false,brief]), X)).
 option_type(log_nested_transactions(X),	must_be(boolean, X)).
 
@@ -184,8 +194,10 @@ option_type(log_nested_transactions(X),	must_be(boolean, X)).
 
 no_agc(Goal) :-
 	current_prolog_flag(agc_margin, Old),
-	set_prolog_flag(agc_margin, 0),
-	call_cleanup(Goal, set_prolog_flag(agc_margin, Old)).
+	setup_call_cleanup(
+	    set_prolog_flag(agc_margin, 0),
+	    Goal,
+	    set_prolog_flag(agc_margin, Old)).
 
 
 %%	rdf_detach_db is det.
@@ -203,7 +215,6 @@ rdf_detach_db :-
 	    save_prefixes(Dir),
 	    retractall(rdf_option(_)),
 	    retractall(source_journal_fd(_,_)),
-	    retractall(db_file_base(_,_)),
 	    unlock_db(Dir)
 	;   true
 	).
@@ -255,23 +266,37 @@ rdf_flush_journal(DB, Options) :-
 
 load_db :-
 	rdf_directory(Dir),
-	load_prefixes(Dir),
-	working_directory(Old, Dir),
-	get_time(Wall0),
-	statistics(cputime, T0),
-	call_cleanup(find_dbs(DBs), working_directory(_, Old)),
-	length(DBs, DBCount),
-	verbosity(DBCount, Silent),
-	make_goals(DBs, Silent, 1, DBCount, Goals),
 	concurrency(Jobs),
-	concurrent(Jobs, Goals, []),
-	statistics(cputime, T1),
+	cpu_stat_key(Jobs, StatKey),
+	get_time(Wall0),
+	statistics(StatKey, T0),
+	load_prefixes(Dir),
+	verbosity(Silent),
+	find_dbs(Dir, Graphs, SnapShots, Journals),
+	length(Graphs, GraphCount),
+	maplist(rdf_unload_graph, Graphs),
+	rdf_statistics(triples(Triples0)),
+	load_sources(snapshots, SnapShots, Silent, Jobs),
+	load_sources(journals, Journals, Silent, Jobs),
+	rdf_statistics(triples(Triples1)),
+	statistics(StatKey, T1),
 	get_time(Wall1),
 	T is T1 - T0,
 	Wall is Wall1 - Wall0,
+	Triples = Triples1 - Triples0,
 	message_level(Silent, Level),
-	print_message(Level, rdf(restore(attached(DBCount, T/Wall)))).
+	print_message(Level, rdf(restore(attached(GraphCount, Triples, T/Wall)))).
 
+load_sources(_, [], _, _) :- !.
+load_sources(Type, Sources, Silent, Jobs) :-
+	length(Sources, Count),
+	RunJobs is min(Count, Jobs),
+	print_message(informational, rdf(restoring(Type, Count, RunJobs))),
+	make_goals(Sources, Silent, 1, Count, Goals),
+	concurrent(RunJobs, Goals, []).
+
+
+%%	make_goals(+DBs, +Silent, +Index, +Total, -Goals)
 
 make_goals([], _, _, _, []).
 make_goals([DB|T0], Silent, I,  Total,
@@ -279,9 +304,9 @@ make_goals([DB|T0], Silent, I,  Total,
 	I2 is I + 1,
 	make_goals(T0, Silent, I2, Total, T).
 
-verbosity(_DBCount, Silent) :-
+verbosity(Silent) :-
 	rdf_option(silent(Silent)), !.
-verbosity(_DBCount, brief).
+verbosity(brief).
 
 
 %%	concurrency(-Jobs)
@@ -295,71 +320,138 @@ concurrency(Jobs) :-
 	Jobs > 0, !.
 concurrency(1).
 
+cpu_stat_key(1, cputime) :- !.
+cpu_stat_key(_, process_cputime).
 
-%%	find_dbs(-DBs:list(atom)) is det.
+
+%%	find_dbs(+Dir, -Graphs, -SnapBySize, -JournalBySize) is det.
 %
-%	DBs is a  list  of  database   (named  graph)  names,  sorted in
-%	increasing file-size. Small files  are   loaded  first  as these
-%	typically contain the schemas and we   want  to avoid re-hashing
-%	large databases due to added rdfs:subPropertyOf triples.
+%	Scan the persistent database and return a list of snapshots and
+%	journals, both sorted by file-size.  Each term is of the form
+%
+%	  ==
+%	  db(Size, Ext, DB, DBFile, Depth)
+%	  ==
 
-find_dbs(DBs) :-
-	expand_file_name(*, Files),
-	phrase(scan_db_files(Files), Scanned),
-	sort(Scanned, ByDB),
-	join_snapshot_and_journals(ByDB, BySize),
-	keysort(BySize, SortedBySize),
-	pairs_values(SortedBySize, DBs).
+find_dbs(Dir, Graphs, SnapBySize, JournalBySize) :-
+	directory_files(Dir, Files),
+	phrase(scan_db_files(Files, Dir, '.', 0), Scanned),
+	maplist(db_graph, Scanned, UnsortedGraphs),
+	sort(UnsortedGraphs, Graphs),
+	(   consider_reindex_db(Dir, Graphs, Scanned)
+	->  find_dbs(Dir, Graphs, SnapBySize, JournalBySize)
+	;   partition(db_is_snapshot, Scanned, Snapshots, Journals),
+	    sort(Snapshots, SnapBySize),
+	    sort(Journals, JournalBySize)
+	).
 
+consider_reindex_db(Dir, Graphs, Scanned) :-
+	length(Graphs, Count),
+	Count > 0,
+	DepthNeeded is floor(log(Count)/log(256)),
+	(   maplist(depth_db(DepthNow), Scanned)
+	->  (   DepthNeeded > DepthNow
+	    ->	true
+	    ;	retractall(rdf_option(directory_levels(_))),
+		assertz(rdf_option(directory_levels(DepthNow))),
+		fail
+	    )
+	;   true
+	),
+	reindex_db(Dir, DepthNeeded).
 
-%%	scan_db_files(+Files)// is det.
+db_is_snapshot(Term) :-
+	arg(2, Term, trp).
+
+db_graph(Term, DB) :-
+	arg(3, Term, DB).
+
+db_file_name(Term, File) :-
+	arg(4, Term, File).
+
+depth_db(Depth, DB) :-
+	arg(5, DB, Depth).
+
+%%	scan_db_files(+Files, +Dir, +Prefix, +Depth)// is det.
 %
 %	Produces a list of db(DB,  Size,   File)  for all recognised RDF
-%	database files.
+%	database files.  File is relative to the database directory Dir.
 
-scan_db_files([]) -->
+scan_db_files([], _, _, _) -->
 	[].
-scan_db_files([File|T]) -->
+scan_db_files([Nofollow|T], Dir, Prefix, Depth) -->
+	{ nofollow(Nofollow) }, !,
+	scan_db_files(T, Dir, Prefix, Depth).
+scan_db_files([File|T], Dir, Prefix, Depth) -->
 	{ file_name_extension(Base, Ext, File),
 	  db_extension(Ext), !,
 	  rdf_db_to_file(DB, Base),
-	  size_file(File, Size)
+	  directory_file_path(Prefix, File, DBFile),
+	  directory_file_path(Dir, DBFile, AbsFile),
+	  size_file(AbsFile, Size)
 	},
-	[ db(DB, Size, File) ],
-	scan_db_files(T).
-scan_db_files([_|T]) -->
-	scan_db_files(T).
+	[ db(Size, Ext, DB, AbsFile, Depth) ],
+	scan_db_files(T, Dir, Prefix, Depth).
+scan_db_files([D|T], Dir, Prefix, Depth) -->
+	{ directory_file_path(Prefix, D, SubD),
+	  directory_file_path(Dir, SubD, AbsD),
+	  exists_directory(AbsD),
+	  \+ read_link(AbsD, _, _), !,	% Do not follow links
+	  directory_files(AbsD, SubFiles),
+	  SubDepth is Depth + 1
+	},
+	scan_db_files(SubFiles, Dir, SubD, SubDepth),
+	scan_db_files(T, Dir, Prefix, Depth).
+scan_db_files([_|T], Dir, Prefix, Depth) -->
+	scan_db_files(T, Dir, Prefix, Depth).
 
+nofollow(.).
+nofollow(..).
 
 db_extension(trp).
 db_extension(jrn).
 
-join_snapshot_and_journals([], []).
-join_snapshot_and_journals([db(DB,S0,_)|T0], [S-DB|T]) :- !,
-	same_db(DB, T0, T1, S0, S),
-	join_snapshot_and_journals(T1, T).
-
-same_db(DB, [db(DB,S1,_)|T0], T, S0, S) :- !,
-	S2 is S0+S1,
-	same_db(DB, T0, T, S2, S).
-same_db(_, L, L, S, S).
-
-
 :- public load_source/4.		% called through make_goals/5
 
-%%	load_source(+DB, +Silent, +Nth, +Total) is det.
+load_source(DB, Silent, Nth, Total) :-
+	db_file_name(DB, File),
+	db_graph(DB, Graph),
+	message_level(Silent, Level),
+	graph_triple_count(Graph, Count0),
+	statistics(cputime, T0),
+	(   db_is_snapshot(DB)
+	->  print_message(Level, rdf(restore(Silent, snapshot(Graph, File)))),
+	    rdf_load_db(File)
+	;   print_message(Level, rdf(restore(Silent, journal(Graph, File)))),
+	    load_journal(File, Graph)
+	),
+	statistics(cputime, T1),
+	T is T1 - T0,
+	graph_triple_count(Graph, Count1),
+	Count is Count1 - Count0,
+	print_message(Level, rdf(restore(Silent,
+					 done(Graph, T, Count, Nth, Total)))).
+
+
+graph_triple_count(Graph, Count) :-
+	rdf_statistics(triples_by_graph(Graph, Count)), !.
+graph_triple_count(_, 0).
+
+
+%%	attach_graph(+Graph, +Options) is det.
 %
 %	Load triples and reload  journal   from  the  indicated snapshot
 %	file.
-%
-%	@param Silent One of =false=, =true= or =brief=
 
-load_source(DB, Silent, Nth, Total) :-
-	message_level(Silent, Level),
-	db_files(DB, SnapshotFile, JournalFile),
-	rdf_retractall(_,_,_,DB),
+attach_graph(Graph, Options) :-
+	(   option(silent(true), Options)
+	->  Level = silent
+	;   Level = informational
+	),
+	db_files(Graph, SnapshotFile, JournalFile),
+	rdf_retractall(_,_,_,Graph),
 	statistics(cputime, T0),
-	print_message(Level, rdf(restore(Silent, source(DB, Nth, Total)))),
+	print_message(Level, rdf(restore(Silent, Graph))),
 	db_file(SnapshotFile, AbsSnapShot),
 	(   exists_file(AbsSnapShot)
 	->  print_message(Level, rdf(restore(Silent, snapshot(SnapshotFile)))),
@@ -368,17 +460,17 @@ load_source(DB, Silent, Nth, Total) :-
 	),
 	(   exists_db(JournalFile)
 	->  print_message(Level, rdf(restore(Silent, journal(JournalFile)))),
-	    load_journal(JournalFile, DB)
+	    load_journal(JournalFile, Graph)
 	;   true
 	),
 	statistics(cputime, T1),
 	T is T1 - T0,
-	(   rdf_statistics(triples_by_file(DB, Count))
+	(   rdf_statistics(triples_by_graph(Graph, Count))
 	->  true
 	;   Count = 0
 	),
 	print_message(Level, rdf(restore(Silent,
-					 done(DB, T, Count, Nth, Total)))).
+					 done(Graph, T, Count)))).
 
 message_level(true, silent) :- !.
 message_level(_, informational).
@@ -394,11 +486,13 @@ message_level(_, informational).
 %	named graph.
 
 load_journal(File, DB) :-
-	open_db(File, read, In, []),
-	call_cleanup((  read(In, T0),
-			process_journal(T0, In, DB)
-		     ),
-		     close(In)).
+	rdf_create_graph(DB),
+	setup_call_cleanup(
+	    open(File, read, In, [encoding(utf8)]),
+	    ( read(In, T0),
+	      process_journal(T0, In, DB)
+	    ),
+	    close(In)).
 
 process_journal(end_of_file, _, _) :- !.
 process_journal(Term, In, DB) :-
@@ -529,11 +623,16 @@ monitor(update(S,P,O,DB,Action)) :-
 	    format(Fd, '~q.~n', [update(S,P,O,Action)]),
 	    sync_journal(DB, Fd)
 	).
-monitor(load(BE, Id)) :-
-	(   BE == begin
-	->  push_state(Id)
-	;   sync_state(Id)
+monitor(load(BE, _DumpFileURI)) :-
+	(   BE = end(Graphs)
+	->  sync_loaded_graphs(Graphs)
+	;   true
 	).
+monitor(create_graph(Graph)) :-
+	\+ blocked_db(Graph, _),
+	journal_fd(Graph, Fd),
+	open_transaction(Graph, Fd),
+	sync_journal(Graph, Fd).
 monitor(transaction(BE, Id)) :-
 	monitor_transaction(Id, BE).
 
@@ -693,38 +792,13 @@ end_transactions([DB:Id|T], DBs, N) :-
 	end_transactions(T, DBs, N).
 
 
-%	State  handling.  We  use   this    for   trapping   changes  by
-%	rdf_load_db/1. In theory, loading such files  can add triples to
-%	multiple sources. In practice this rarely   happens. We save the
-%	current state and sync all  files   that  have changed. The only
-%	drawback of this approach is that loaded files spreading triples
-%	over multiple databases cause all these   databases  to be fully
-%	synchronised. This shouldn't happen very often.
+%%	sync_loaded_graphs(+Graphs)
+%
+%	Called after a binary triple has been loaded that added triples
+%	to the given graphs.
 
-:- dynamic
-	pre_load_state/2.
-
-push_state(Id) :-
-	get_state(State),
-	asserta(pre_load_state(Id, State)).
-
-get_state(State) :-
-	findall(DB-MD5, (rdf_graph(DB), rdf_md5(DB, MD5)), State0),
-	keysort(State0, State).
-
-sync_state(Id) :-
-	retract(pre_load_state(Id, PreState)),
-	get_state(AfterState),
-	sync_state(AfterState, PreState).
-
-sync_state([], _).
-sync_state([DB-MD5|TA], Pre) :-
-	(   memberchk(DB-MD5P, Pre),
-	    MD5P == MD5
-	->  true
-	;   create_db(DB)
-	),
-	sync_state(TA, Pre).
+sync_loaded_graphs(Graphs) :-
+	maplist(create_db, Graphs).
 
 
 		 /*******************************
@@ -828,7 +902,12 @@ create_db(DB) :-
 	debug(rdf_persistency, 'Saving DB ~w', [DB]),
 	db_abs_files(DB, Snapshot, Journal),
 	atom_concat(Snapshot, '.new', NewSnapshot),
-	(   catch(rdf_save_db(NewSnapshot, DB), _, fail)
+	(   catch(( create_directory_levels(Snapshot),
+		    rdf_save_db(NewSnapshot, DB)
+		  ), Error,
+		  ( print_message(warning, Error),
+		    fail
+		  ))
 	->  (   exists_file(Journal)
 	    ->  delete_file(Journal)
 	    ;   true
@@ -917,17 +996,51 @@ unlock_db(Out, File) :-
 lockfile(Dir, LockFile) :-
 	atomic_list_concat([Dir, /, lock], LockFile).
 
+directory_levels(Levels) :-
+	rdf_option(directory_levels(Levels)), !.
+directory_levels(2).
+
 db_file(Base, File) :-
 	rdf_directory(Dir),
-	atomic_list_concat([Dir, /, Base], File).
+	directory_levels(Levels),
+	db_file(Dir, Base, Levels, File).
+
+db_file(Dir, Base, Levels, File) :-
+	dir_levels(Base, Levels, Segments, [Base]),
+	atomic_list_concat([Dir|Segments], /, File).
 
 open_db(Base, Mode, Stream, Options) :-
 	db_file(Base, File),
+	create_directory_levels(File),
 	open(File, Mode, Stream, [encoding(utf8)|Options]).
+
+create_directory_levels(_File) :-
+	rdf_option(directory_levels(0)), !.
+create_directory_levels(File) :-
+	file_directory_name(File, Dir),
+	make_directory_path(Dir).
 
 exists_db(Base) :-
 	db_file(Base, File),
 	exists_file(File).
+
+%%	dir_levels(+File, +Levels, ?Segments, ?Tail) is det.
+%
+%	Create a list of intermediate directory names for File.  Each
+%	directory consists of two hexadecimal digits.
+
+dir_levels(_, 0, Segments, Segments) :- !.
+dir_levels(File, Levels, Segments, Tail) :-
+	rdf_atom_md5(File, 1, Hash),
+	create_dir_levels(Levels, 0, Hash, Segments, Tail).
+
+create_dir_levels(0, _, _, Segments, Segments) :- !.
+create_dir_levels(N, S, Hash, [S1|Segments0], Tail) :-
+	sub_atom(Hash, S, 2, _, S1),
+	S2 is S+2,
+	N2 is N-1,
+	create_dir_levels(N2, S2, Hash, Segments0, Tail).
+
 
 %%	db_files(+DB, -Snapshot, -Journal).
 %%	db_files(-DB, +Snapshot, -Journal).
@@ -959,22 +1072,32 @@ db_abs_files(DB, Snapshot, Journal) :-
 	db_file(Journal0, Journal).
 
 
-%%	rdf_journal_file(+DB, -File) is semidet.
-%%	rdf_journal_file(-DB, -File) is nondet.
+%%	rdf_journal_file(+Graph, -File) is semidet.
+%%	rdf_journal_file(-Graph, -File) is nondet.
 %
-%	True if File is the absolute  file   name  of  an existing named
-%	graph DB.
-%
-%	@tbd	Avoid using private rdf_db:rdf_graphs_/1.
+%	True if File the name of the existing journal file for Graph.
 
-rdf_journal_file(DB, Journal) :-
-	(   var(DB)
-	->  rdf_db:rdf_graphs_(All),	% also pick the empty graphs
-	    member(DB, All)
+rdf_journal_file(Graph, Journal) :-
+	(   var(Graph)
+	->  rdf_graph(Graph)
 	;   true
 	),
-	db_abs_files(DB, _Snapshot, Journal),
+	db_abs_files(Graph, _Snapshot, Journal),
 	exists_file(Journal).
+
+
+%%	rdf_snapshot_file(+Graph, -File) is semidet.
+%%	rdf_snapshot_file(-Graph, -File) is nondet.
+%
+%	True if File the name of the existing snapshot file for Graph.
+
+rdf_snapshot_file(Graph, Snapshot) :-
+	(   var(Graph)
+	->  rdf_graph(Graph)	% also pick the empty graphs
+	;   true
+	),
+	db_abs_files(Graph, Snapshot, _Journal),
+	exists_file(Snapshot).
 
 
 %%	rdf_db_to_file(+DB, -File) is det.
@@ -985,20 +1108,11 @@ rdf_journal_file(DB, Journal) :-
 %	reasons. Speed, but much more important   is that the mapping of
 %	raw --> encoded provided by  www_form_encode/2 is not guaranteed
 %	to be unique by the W3C standards.
-%
-%	@tbd	We keep two predicates for exploiting Prolog indexing.
-%		Once multi-argument indexed is hashed we should clean
-%		this up.
 
 rdf_db_to_file(DB, File) :-
-	nonvar(File),
 	file_base_db(File, DB), !.
 rdf_db_to_file(DB, File) :-
-	nonvar(DB),
-	db_file_base(DB, File), !.
-rdf_db_to_file(DB, File) :-
 	url_to_filename(DB, File),
-	assert(db_file_base(DB, File)),
 	assert(file_base_db(File, DB)).
 
 %%	url_to_filename(+URL, -FileName) is det.
@@ -1018,7 +1132,7 @@ url_to_filename(URL, FileName) :-
 	phrase(url_encode(EncCodes), Codes),
 	atom_codes(FileName, EncCodes).
 url_to_filename(URL, FileName) :-
-	www_form_encode(URL, FileName).
+	uri_encoded(path, URL, FileName).
 
 url_encode([0'+|T]) -->
 	" ", !,
@@ -1056,6 +1170,66 @@ alphanum(C) -->
 	}.
 
 no_enc_extra(0'_) --> "_".
+
+
+		 /*******************************
+		 *	       REINDEX		*
+		 *******************************/
+
+%%	reindex_db(+Dir, +Levels)
+%
+%	Reindex the database by creating intermediate directories.
+
+reindex_db(Dir, Levels) :-
+	directory_files(Dir, Files),
+	reindex_files(Files, Dir, '.', 0, Levels),
+	remove_empty_directories(Files, Dir).
+
+reindex_files([], _, _, _, _).
+reindex_files([Nofollow|Files], Dir, Prefix, CLevel, Levels) :-
+	nofollow(Nofollow), !,
+	reindex_files(Files, Dir, Prefix, CLevel, Levels).
+reindex_files([File|Files], Dir, Prefix, CLevel, Levels) :-
+	CLevel \== Levels,
+	file_name_extension(_Base, Ext, File),
+	db_extension(Ext), !,
+	directory_file_path(Prefix, File, DBFile),
+	directory_file_path(Dir, DBFile, OldPath),
+	db_file(Dir, File, Levels, NewPath),
+	debug(rdf_persistency, 'Rename ~q --> ~q', [OldPath, NewPath]),
+	file_directory_name(NewPath, NewDir),
+	make_directory_path(NewDir),
+	rename_file(OldPath, NewPath),
+	reindex_files(Files, Dir, Prefix, CLevel, Levels).
+reindex_files([D|Files], Dir, Prefix, CLevel, Levels) :-
+	directory_file_path(Prefix, D, SubD),
+	directory_file_path(Dir, SubD, AbsD),
+	exists_directory(AbsD),
+	\+ read_link(AbsD, _, _), !,	% Do not follow links
+	directory_files(AbsD, SubFiles),
+	CLevel2 is CLevel + 1,
+	reindex_files(SubFiles, Dir, SubD, CLevel2, Levels),
+	reindex_files(Files, Dir, Prefix, CLevel, Levels).
+reindex_files([_|Files], Dir, Prefix, CLevel, Levels) :-
+	reindex_files(Files, Dir, Prefix, CLevel, Levels).
+
+
+remove_empty_directories([], _).
+remove_empty_directories([File|Files], Dir) :-
+	\+ nofollow(File),
+	directory_file_path(Dir, File, Path),
+	exists_directory(Path),
+	\+ read_link(Path, _, _), !,
+	directory_files(Path, Content),
+	exclude(nofollow, Content, RealContent),
+	(   RealContent == []
+	->  debug(rdf_persistency, 'Remove empty dir ~q', [Path]),
+	    delete_directory(Path)
+	;   remove_empty_directories(RealContent, Path)
+	),
+	remove_empty_directories(Files, Dir).
+remove_empty_directories([_|Files], Dir) :-
+	remove_empty_directories(Files, Dir).
 
 
 		 /*******************************
@@ -1139,37 +1313,51 @@ time_stamp(Int) :-
 prolog:message(rdf(Term)) -->
 	message(Term).
 
-message(restore(attached(Graphs, Time/Wall))) -->
+message(restoring(Type, Count, Jobs)) -->
+	[ 'Restoring ~D ~w using ~D concurrent workers'-[Count, Type, Jobs] ].
+message(restore(attached(Graphs, Triples, Time/Wall))) -->
 	{ catch(Percent is round(100*Time/Wall), _, Percent = 0) },
-	[ 'Attached ~D graphs in ~2f seconds (~d% CPU = ~2f sec.)'-
-	  [Graphs, Wall, Percent, Time] ].
+	[ 'Loaded ~D graphs (~D triples) in ~2f sec. (~d% CPU = ~2f sec.)'-
+	  [Graphs, Triples, Wall, Percent, Time] ].
+% attach_graph/2
 message(restore(true, Action)) --> !,
 	silent_message(Action).
 message(restore(brief, Action)) --> !,
 	brief_message(Action).
-message(restore(_, source(DB, Nth, Total))) -->
-	{ file_base_name(DB, Base) },
-	[ 'Restoring ~w ... (~D of ~D graphs) '-[Base, Nth, Total], flush ].
+message(restore(_, Graph)) -->
+	[ 'Restoring ~p ... '-[Graph], flush ].
 message(restore(_, snapshot(_))) -->
 	[ at_same_line, '(snapshot) '-[], flush ].
 message(restore(_, journal(_))) -->
 	[ at_same_line, '(journal) '-[], flush ].
-message(restore(_, done(_, Time, Count, _Nth, _Total))) -->
+message(restore(_, done(_, Time, Count))) -->
 	[ at_same_line, '~D triples in ~2f sec.'-[Count, Time] ].
+% load_source/4
+message(restore(_, snapshot(G, _))) -->
+	[ 'Restoring ~p	(snapshot)'-[G], flush ].
+message(restore(_, journal(G, _))) -->
+	[ 'Restoring ~p	(journal)'-[G], flush ].
+message(restore(_, done(_, Time, Count))) -->
+	[ at_same_line, '~D triples in ~2f sec.'-[Count, Time] ].
+% journal handling
 message(update_failed(S,P,O,Action)) -->
 	[ 'Failed to update <~p ~p ~p> with ~p'-[S,P,O,Action] ].
+% directory reindexing
+message(reindex(Count, Depth)) -->
+	[ 'Restructuring database with ~d levels (~D graphs)'-[Depth, Count] ].
+message(reindex(Depth)) -->
+	[ 'Fixing database directory structure (~d levels)'-[Depth] ].
 
 silent_message(_Action) --> [].
 
-brief_message(source(DB, Nth, Total)) -->
-	{ file_base_name(DB, Base) },
+brief_message(done(Graph, _Time, _Count, Nth, Total)) -->
+	{ file_base_name(Graph, Base) },
 	[ at_same_line,
-	  '\r~w~`.t ~D of ~D graphs~72|'-[Base, Nth, Total],
+	  '\r~p~`.t ~D of ~D graphs~72|'-[Base, Nth, Total],
 	  flush
 	].
-brief_message(snapshot(_File)) --> [].
-brief_message(journal(_File))  --> [].
-brief_message(done(_DB, _Time, _Count, _Nth, _Total)) --> [].
+brief_message(_) --> [].
+
 
 prolog:message_context(rdf_locked(Args)) -->
 	{ memberchk(time(Time), Args),

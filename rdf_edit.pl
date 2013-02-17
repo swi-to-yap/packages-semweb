@@ -92,7 +92,6 @@
 	transaction_name/2,		% TID, Name
 	undo_marker/2,			% Mode, TID
 	journal/3,			% Path, Mode, Stream
-	unmodified_md5/2,		% Path, MD5
 	snapshot_file/1.		% File
 
 /** <module> RDF edit layer
@@ -229,7 +228,7 @@ rdfe_load(File, Options) :-
 	    ;	time_file(Path, Stamp)
 	    ),
 	    SecTime is round(Stamp),
-	    rdf_statistics(triples_by_file(Graph, Triples)),
+	    rdf_statistics(triples_by_graph(Graph, Triples)),
 	    rdf_md5(Graph, MD5),
 	    assert_action(TID, load_file(Path), -, -, -),
 	    journal(rdf_load(TID,
@@ -290,7 +289,7 @@ load_snapshot(Source, Path) :-
 	rdf_load_db(Path),
 	statistics(cputime, T1),
 	Time is T1 - T0,
-	rdf_statistics(triples_by_file(Source, Triples)),
+	rdf_statistics(triples_by_graph(Source, Triples)),
 	rdf_md5(Source, MD5),
 					% 1e10: modified far in the future
 	assert(rdf_db:rdf_source(Source, 1e12, Triples, MD5)),
@@ -740,32 +739,20 @@ uri_scheme(ftps).
 %	Source as `payload'.
 
 rdfe_is_modified(Source) :-
-	rdf_source(DB, Source),
-	rdf_md5(DB, MD5),
-	(   unmodified_md5(Source, UnmodifiedMD5)
-	->  true
-	;   rdf_db:rdf_source(DB, Source, _Time, _Triples, UnmodifiedMD5)
-	),
-	UnmodifiedMD5 \== MD5.
+	rdf_source(Graph, Source),
+	rdf_graph_property(Graph, modified(true)).
 
 
 rdfe_clear_modified :-
 	forall(rdf_graph(File),
 	       rdfe_clear_modified(File)).
 
-%%	rdfe_clear_modified(+DB) is det.
+%%	rdfe_clear_modified(+Graph) is det.
 %
-%	Consider the current state of DB as _unmodified_.
+%	Consider the current state of Graph as _unmodified_.
 
-rdfe_clear_modified(DB) :-
-	atom(DB),
-	retractall(unmodified_md5(DB, _)),
-	rdf_md5(DB, MD5),
-	(   rdf_db:rdf_source(DB, _File, _Time, _Triples, UnmodifiedMD5),
-	    MD5 == UnmodifiedMD5
-	->  true
-	;   assert(unmodified_md5(DB, MD5))
-	).
+rdfe_clear_modified(Graph) :-
+	rdf_set_graph(Graph, modified(false)).
 
 
 		 /*******************************
@@ -813,7 +800,6 @@ rdfe_reset_undo :-
 	retractall(current_transaction(_)),
 	retractall(transaction_name(_,_)),
 	retractall(undo_marker(_,_)),
-	retractall(unmodified_md5(_, _)),
 	retractall(snapshot_file(_)).
 
 %	close possible open journal at exit.  Using a Prolog hook
