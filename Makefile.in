@@ -80,8 +80,8 @@ uninstall::
 tags::
 		etags *.[ch]
 
-rdf_db.o:	unicode_map.c buffer.h error.h
-query.o:	buffer.h
+rdf_db.o:	$(srcdir)/unicode_map.c $(srcdir)/buffer.h $(srcdir)/error.h
+query.o:	$(srcdir)/buffer.h
 
 ################################################################
 # Documentation
