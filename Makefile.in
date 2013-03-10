@@ -117,8 +117,7 @@ rdfdb.tex:	$(srcdir)/doc/rdfdb.txt
 check::
 		(cd $(srcdir) && $(PL) -q -f test_rdf_db.pl -g test_rdf_db,halt -t 'halt(1)' )
 		(cd $(srcdir) && $(PL) -q -f litmap_test.pl -g test,halt -t 'halt(1)' )
-		(cd $(srcdir) && $(PL) -q -f test.pl -g run_tests,halt -t 'halt(1)' )
-		(cd $(srcdir) && $(PL) -q -f test_con.pl -g run,halt -t 'halt(1)' )
+		(cd $(srcdir) &&$(PL) -q -f test.pl -g run_tests,halt -t 'halt(1)' )
 		(cd $(srcdir) && $(PL) -q -f test_subprop.pl -g test_subprop,halt -t 'halt(1)' )
 		(cd $(srcdir) && $(PL) -q -f test_turtle.pl -g test_turtle,halt -t 'halt(1)' )
 		(cd $(srcdir) && $(PL) -q -f test_ntriples.pl -g test_ntriples,halt -t 'halt(1)' )
