@@ -1,9 +1,10 @@
 /*  Part of SWI-Prolog
 
     Author:        Jan Wielemaker
-    E-mail:        J.Wielemaker@uva.nl
+    E-mail:        J.Wielemaker@vu.nl
     WWW:           http://www.swi-prolog.org
-    Copyright (C): 2009, University of Amsterdam
+    Copyright (C): 2009-2012, University of Amsterdam
+			      VU University Amsterdam
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License
@@ -44,6 +45,27 @@
 :- use_module(library(debug)).
 :- use_module(library(sgml_write)).
 
+:- predicate_options(rdf_save_turtle/2, 2,
+		     [ graph(atom),
+		       base(atom),
+		       encoding(oneof([utf8])),
+		       indent(nonneg),
+		       tab_distance(nonneg),
+		       silent(boolean),
+		       subject_white_lines(nonneg),
+		       align_prefixes(boolean),
+		       user_prefixes(boolean),
+		       only_known_prefixes(boolean),
+		       comment(boolean),
+		       group(boolean),
+		       single_line_bnodes(boolean),
+		       canonize_numbers(boolean),
+		       canonical(boolean),
+		       expand(any)
+		     ]).
+:- predicate_options(rdf_save_canonical_turtle/2, 2,
+		     [ pass_to(rdf_save_turtle/2, 2)
+		     ]).
 
 /** <module> Turtle - Terse RDF Triple Language writer
 
@@ -200,7 +222,7 @@ is_meta(expand).
 %%	rdf_save_canonical_turtle(+Spec, +Options) is det.
 %
 %	Save triples in  a  canonical  format.   This  is  the  same  as
-%	rdf_save_turtle/3, but using different defaults. In particular:
+%	rdf_save_turtle/2, but using different defaults. In particular:
 %
 %	    * encoding(utf8),
 %	    * indent(0),
@@ -950,7 +972,10 @@ subjects(State, Subjects) :-
 	tw_state_expand(State, Expand),
 	(   Expand == lookup,
 	    atom(Graph),
-	    rdf_statistics(triples_by_file(Graph, Count)),
+	    (   rdf_graph_property(Graph, triples(Count))
+	    ->  true
+	    ;   Count = 0			% non-existing graph
+	    ),
 	    rdf_statistics(triples(Total)),
 	    Count * 10 < Total
 	->  findall(S, rdf(S,_,_,Graph), List),
@@ -966,7 +991,7 @@ subjects(State, Subjects) :-
 subject(State, Subject) :-
 	tw_state_graph(State, Graph),
 	(   atom(Graph)
-	->  rdf_subject(Subject),
+	->  rdf_resource(Subject),
 	    (   rdf(Subject, _, _, Graph)
 	    ->  true
 	    )
@@ -1120,9 +1145,6 @@ tw_literal(literal(lang(Lang, Value)), State, Out) :- !,
 	tw_quoted_string(Value, State, Out),
 	downcase_atom(Lang, TurtleLang),	% Turtle lang = [a-z]+('-'[a-z0-9]+)*
 	format(Out, '@~w', [TurtleLang]).
-tw_literal(literal(Value), State, Out) :-
-	atom(Value), !,
-	tw_quoted_string(Value, State, Out).
 tw_literal(literal(Value), State, Out) :-
 	atom(Value), !,
 	tw_quoted_string(Value, State, Out).

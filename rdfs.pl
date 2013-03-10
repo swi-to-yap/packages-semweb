@@ -47,8 +47,6 @@
 
 	    rdfs_find/5			% +String, +Dom, +Props, +Method, -Subj
 	  ]).
-:- use_module(library(debug)).
-:- use_module(library(rdf)).
 :- use_module(library(lists)).
 :- use_module(rdf_db).
 
@@ -296,20 +294,29 @@ rdfs_class_property(Class, Property) :-
 %	parseType="Collection" as well as on Bag, Set and Alt.
 
 rdfs_member(Element, Set) :-
-	rdf_has(Set, rdf:first, _),
+	rdf_has(Set, rdf:first, _), !,
 	rdfs_collection_member(Element, Set).
 rdfs_member(Element, Set) :-
-	rdfs_individual_of(Set, rdfs:'Container'), !,
+	container_class(Class),
+	rdfs_individual_of(Set, Class), !,
 	(   nonvar(Element)
 	->  rdf(Set, Predicate, Element),
 	    rdf_member_property(Predicate, _N)
-	;   between(1, infinite, N),
-	    rdf_member_property(Prop, N),
-	    (	rdf(Set, Prop, Member)
-	    ->	Member = Element
-	    ;	!, fail
-	    )
+	;   findall(N-V, rdf_nth(Set, N, V), Pairs),
+	    keysort(Pairs, Sorted),
+	    member(_-Element, Sorted)
 	).
+
+rdf_nth(Set, N, V) :-
+	rdf(Set, P, V),
+	rdf_member_property(P, N).
+
+:- rdf_meta container_class(r).
+
+container_class(rdf:'Bag').
+container_class(rdf:'Seq').
+container_class(rdf:'Alt').
+
 
 rdfs_collection_member(Element, Set) :-
 	rdf_has(Set, rdf:first, Element).
@@ -425,48 +432,3 @@ globalise_list([H0|T0], [H|T]) :- !,
 	globalise_list(T0, T).
 globalise_list(X, G) :-
 	rdf_global_id(X, G).
-
-/* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-TOP-DOWN
-
-
-rdfs_find(String, Domain, Fields, Method, Subject) :-
-	globalise_list(Fields, GlobalFields),
-	generate_domain(Domain, Subject),
-	member(Field, GlobalFields),
-	(   rdf_equal(Field, rdfs:label)
-	->  rdfs_label(Subject, Arg)
-	;   rdf_has(Subject, Field, literal(Arg))
-	),
-	rdf_match_label(Method, String, Arg).
-
-%%	generate_domain(+Domain, -Resource)
-%
-%	Generate all resources that satisfy some a domain specification.
-
-generate_domain(All, Subject) :-
-	rdf_equal(All, rdfs:'Resource'), !,
-	rdf_subject(Subject).
-generate_domain(class(Class), Subject) :- !,
-	rdfs_subclass_of(Subject, Class).
-generate_domain(all_values_from(Class), Individual) :-
-	(   rdf_equal(Class, rdfs:'Resource')
-	->  rdf_subject(Individual)			% this is OWL-full
-	;   rdfs_individual_of(Individual, Class)
-	).
-generate_domain(some_values_from(Class), Individual) :- % Actually this is
-	rdfs_individual_of(Individual, Class).		% anything
-generate_domain(union_of(Domains), Individual) :-
-	member(Domain, Domains),
-	generate_domain(Domain, Individual).
-generate_domain(intersection_of(Domains), Individual) :-
-	in_all_domains(Domains, Individual).
-generate_domain(one_of(Individuals), Individual) :-
-	member(Individual, Individuals).
-
-in_all_domains([], _).
-in_all_domains([H|T], Resource) :-
-	generate_domain(H, Resource),
-	in_all_domains(T, Resource).
-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-

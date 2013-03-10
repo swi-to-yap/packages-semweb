@@ -24,6 +24,9 @@
 
 #ifndef ATOM_H_INCLUDED
 #define ATOM_H_INCLUDED
+#include <SWI-Stream.h>
+#include <SWI-Prolog.h>
+#include <wchar.h>
 
 #define MAX_LIKE_CHOICES	100	/* max *'s in like pattern */
 
@@ -58,6 +61,19 @@ typedef struct atom_info
   int		rc;			/* TRUE if text atom */
 } atom_info;
 
+
+#ifdef COMPACT
+typedef unsigned int atom_id;
+#define ATOM_ID_SHIFT	7		/* Sync with SWI-Prolog */
+#define TAG_ATOM	0x00000004L
+
+#define ATOM_ID(a)	((atom_id)(((uintptr_t)(a))>>ATOM_ID_SHIFT))
+#define ID_ATOM(id)	(((uintptr_t)(id)<<ATOM_ID_SHIFT)|TAG_ATOM)
+#else
+typedef atom_t	atom_id;
+#define ATOM_ID(a)	(a)
+#define ID_ATOM(id)	(id)
+#endif
 
 int	cmp_atoms(atom_t a1, atom_t a2);
 int	cmp_atom_info(atom_info *a1, atom_t a2);

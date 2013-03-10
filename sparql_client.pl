@@ -33,9 +33,11 @@
 :- module(sparql_client,
 	  [ sparql_query/3,		% +Query, -Row, +Options
 	    sparql_set_server/1,	% +Options
-	    sparql_read_xml_result/2	% +Stream, -Result
+	    sparql_read_xml_result/2,	% +Stream, -Result
+	    sparql_read_json_result/2	% +Input, -Result
 	  ]).
 :- use_module(library(http/http_open)).
+:- use_module(library(http/json)).
 :- use_module(library(lists)).
 :- use_module(library(rdf)).
 :- use_module(library(semweb/rdf_turtle)).
@@ -257,12 +259,16 @@ term_expansion(T0, T) :-
 %		* ask(Bool)
 %		Where Bool is either =true= or =false=
 
+:- thread_local
+	bnode_map/2.
+
 sparql_read_xml_result(Input, Result) :-
 	load_structure(Input, DOM,
 		       [ dialect(xmlns),
 			 space(remove)
 		       ]),
-	dom_to_result(DOM, Result).
+	call_cleanup(dom_to_result(DOM, Result),
+		     retractall(bnode_map(_,_))).
 
 dom_to_result(DOM, Result) :-
 	(   sub_element(DOM, sparql:head, _HAtt, Content)
@@ -276,7 +282,7 @@ dom_to_result(DOM, Result) :-
 	    Result = select(VarTerm, Rows),
 	    sub_element(DOM, sparql:results, _RAtt, RContent)
 	->  rows(RContent, Vars, Rows)
-	).
+	), !.					% Guarantee finalization
 
 %%	variables(+DOM, -Varnames)
 %
@@ -317,7 +323,7 @@ value([element(sparql:literal, Att, Content)], literal(Lit)) :- !,
 	).
 value([element(sparql:uri, [], [URI])], URI) :- !.
 value([element(sparql:bnode, [], [NodeID])], URI) :- !,
-	atom_concat('__', NodeID, URI).			% DUBIOUS
+	bnode(NodeID, URI).
 value([element(sparql:unbound, [], [])], '$null$').
 
 
@@ -334,4 +340,95 @@ sub_element([H|T], Name, Att, Content) :-
 	(   sub_element(H, Name, Att, Content)
 	;   sub_element(T, Name, Att, Content)
 	).
+
+
+bnode(Name, URI) :-
+	bnode_map(Name, URI), !.
+bnode(Name, URI) :-
+	gensym('__bnode', URI0),
+	assertz(bnode_map(Name, URI0)),
+	URI = URI0.
+
+
+%%	sparql_read_json_result(+Input, -Result) is det.
+%
+%	The returned Result term is of the format:
+%
+%		* select(VarNames, Rows)
+%		Where VarNames is a term v(Name, ...) and Rows is a
+%		list of row(....) containing the column values in the
+%		same order as the variable names.
+%
+%		* ask(Bool)
+%		Where Bool is either =true= or =false=
+%
+%	@see http://www.w3.org/TR/rdf-sparql-json-res/
+
+sparql_read_json_result(Input, Result) :-
+	setup_call_cleanup(
+	    open_input(Input, In, Close),
+	    read_json_result(In, Result),
+	    close_input(Close)).
+
+open_input(stream(In), In, true) :- !.
+open_input(In, In, true) :-
+	is_stream(In), !.
+open_input(File, In, close(In)) :-
+	open(File, read, In, [encoding(utf8)]).
+
+close_input(close(In)) :- !,
+	retractall(bnode_map(_,_)),
+	close(In).
+close_input(_) :-
+	retractall(bnode_map(_,_)).
+
+read_json_result(In, Result) :-
+	json_read(In, JSON),
+	json_to_result(JSON, Result).
+
+json_to_result(json([ head    = json(Head),
+		      results = json(Body)
+		    ]),
+	       select(Vars, Rows)) :-
+	memberchk(vars=VarList, Head),
+	Vars =.. [v|VarList],
+	memberchk(bindings=Bindings, Body), !,
+	maplist(json_row(VarList), Bindings, Rows).
+json_to_result(json(JSon), ask(Boolean)) :-
+	memberchk(boolean = @(Boolean), JSon).
+
+
+json_row(Vars, json(Columns), Row) :-
+	maplist(json_cell, Vars, Columns, Values), !,
+	Row =.. [row|Values].
+json_row(Vars, json(Columns), Row) :-
+	maplist(json_cell_or_null(Columns), Vars, Values),
+	Row =.. [row|Values].
+
+json_cell(Var, Var=json(JValue), Value) :-
+	memberchk(type=Type, JValue),
+	jvalue(Type, JValue, Value).
+
+json_cell_or_null(Columns, Var, Value) :-
+	memberchk(Var=json(JValue), Columns), !,
+	memberchk(type=Type, JValue),
+	jvalue(Type, JValue, Value).
+json_cell_or_null(_, _, '$null$').
+
+jvalue(uri, JValue, URI) :-
+	memberchk(value=URI, JValue).
+jvalue(literal, JValue, literal(Literal)) :-
+	memberchk(value=Value, JValue),
+	(   memberchk('xml:lang'=Lang, JValue)
+	->  Literal = lang(Lang, Value)
+	;   memberchk('datatype'=Type, JValue)
+	->  Literal = type(Type, Value)
+	;   Literal = Value
+	).
+jvalue('typed-literal', JValue, literal(type(Type, Value))) :-
+	memberchk(value=Value, JValue),
+	memberchk('datatype'=Type, JValue).
+jvalue(bnode, JValue, URI) :-
+	memberchk(value=NodeID, JValue),
+	bnode(NodeID, URI).
 

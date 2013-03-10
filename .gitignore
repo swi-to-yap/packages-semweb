@@ -3,6 +3,7 @@
 *.a
 *.so
 *.dylib
+*.dSYM
 *.dll
 *.exp
 *.ilk
@@ -33,8 +34,13 @@ semweb.pdf
 rdfcompare.tex
 rdfturtle.tex
 rdfturtlewrite.tex
+rdfntriples.tex
 rdfportray.tex
 rdflib.tex
 sparqlclient.tex
 semweb.tex
+rdfcache.tex
+rdfdb.tex
+doc/*.tex
+g1.rec
 .gdbinit
