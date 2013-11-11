@@ -35,7 +35,6 @@
 	  ]).
 :- use_module(library(record)).
 :- use_module(library(uri)).
-:- use_module(library(assoc)).
 :- use_module(library(option)).
 :- use_module(library(http/http_open)).
 :- use_module(library(semweb/rdf_db)).
@@ -44,21 +43,19 @@
 /** <module> Process files in the RDF N-Triples format
 
 The library(semweb/rdf_ntriples) provides a  fast   reader  for  the RDF
-N-Triples format. N-Triples is a simple format  that is designed to load
-efficiently and unambiguously with a simple   parser  to support the W3C
-RDF test suites. In the meanwhile, it has gained some popularity for RDF
-database dumps. As these tend  to  be   large  single-file  dumps, it is
-attractive to have an efficient parser for them.
+N-Triples format. N-Triples is  a  simple   format,  originally  used to
+support the W3C RDF test suites. The   current  format has been extended
+and is a subset of the Turtle format (see library(semweb/rdf_turtle)).
 
 The    API    of    this    library      is    almost    identical    to
 library(semweb/rdf_turtle).  This  module   provides    a   plugin  into
 rdf_load/2, making this predicate support the format =ntriples=.
 
-@see http://www.w3.org/2001/sw/RDFCore/ntriples/
+@see http://www.w3.org/TR/n-triples/
 */
 
 :- predicate_options(rdf_read_ntriples/3, 3,
-		     [ anon_prefix(atom),
+		     [ anon_prefix(any), % atom or node(_)
 		       base_uri(atom),
 		       error_count(-integer),
 		       on_error(oneof([warning,error]))
@@ -94,8 +91,9 @@ rdf_load/2, making this predicate support the format =ntriples=.
 %
 %	True when Triples is a list of triples from Input.  Options:
 %
-%	  * anon_prefix(+Atom)
-%	  Prefix nodeIDs with this atom.
+%	  * anon_prefix(+AtomOrNode)
+%	  Prefix nodeIDs with this atom.  If AtomOrNode is the term
+%	  node(_), bnodes are returned as node(Id).
 %	  * base_uri(+Atom)
 %	  Defines the default anon_prefix as __<baseuri>_
 %	  * on_error(Action)
@@ -185,8 +183,9 @@ map_nodes(triple(S0,P0,O0), rdf(S,P,O), State0, State) :-
 	map_node(P0, P, State1, State2),
 	map_node(O0, O, State2, State).
 
-map_node(node(NodeId), BNode, State, State) :- !,
+map_node(node(NodeId), BNode, State, State) :-
 	nt_state_anon_prefix(State, Prefix),
+	atom(Prefix), !,
 	atom_concat(Prefix, NodeId, BNode).
 map_node(Node, Node, State, State).
 
@@ -209,16 +208,17 @@ open_input(URL, Stream, close(Stream)) :-
 	(   sub_atom(URL, 0, _, _, 'http://')
 	;   sub_atom(URL, 0, _, _, 'https://')
 	), !,
-	http_open(URL, Stream, []).
+	http_open(URL, Stream, []),
+	set_stream(Stream, encoding(utf8)).
 open_input(URL, Stream, close(Stream)) :-
 	uri_file_name(URL, Path), !,
-	open(Path, read, Stream, [encoding(octet)]).
+	open(Path, read, Stream, [encoding(utf8)]).
 open_input(File, Stream, close(Stream)) :-
 	absolute_file_name(File, Path,
 			   [ access(read),
 			     extensions([nt, ntriples, ''])
 			   ]),
-	open(Path, read, Stream, [encoding(octet)]).
+	open(Path, read, Stream, [encoding(utf8)]).
 
 n3_encoding(octet).
 n3_encoding(ascii).
@@ -267,11 +267,11 @@ init_state(In, Options, State) :-
 %	Plugin rule that supports loading the =ntriples= format.
 
 rdf_db:rdf_load_stream(ntriples, Stream, _Module:Options) :-
-	rdf_db:graph(Options, Id),
+	rdf_db:graph(Options, Graph),
 	rdf_transaction((  rdf_process_ntriples(Stream, assert_triples, Options),
-			   rdf_set_graph(Id, modified(false))
+			   rdf_set_graph(Graph, modified(false))
 			),
-			parse(Id)).
+			parse(Graph)).
 
 assert_triples([], _).
 assert_triples([rdf(S,P,O)|T], Graph) :-

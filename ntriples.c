@@ -24,6 +24,7 @@
 #include <SWI-Stream.h>
 #include <SWI-Prolog.h>
 #include <string.h>
+#include "turtle_chars.c"
 
 static atom_t ATOM_end_of_file;
 
@@ -59,37 +60,63 @@ static const char char_type0[] =
    0, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, /* 40-4F */
   UC, UC, UC, UC, UC, UC, UC, UC, UC, UC, UC,  0,  0,  0,  0,  0, /* 50-5F */
    0, LC, LC, LC, LC, LC, LC, LC, LC, LC, LC, LC, LC, LC, LC, LC, /* 60-6F */
-  LC, LC, LC, LC, LC, LC, LC, LC, LC, LC, LC,  0,  0,  0,  0,  0, /* 70-7F */
-
-  IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV,
-  IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV,
-  IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV,
-  IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV,
-  IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV,
-  IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV,
-  IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV,
-  IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV, IV
+  LC, LC, LC, LC, LC, LC, LC, LC, LC, LC, LC,  0,  0,  0,  0,  0  /* 70-7F */
 };
 
 static const char* char_type = &char_type0[1];
 
 static inline int
 is_ws(int c)
-{ return char_type[c] == WS;
+{ return c < 128 && char_type[c] == WS;
 }
 
 static inline int
 is_eol(int c)
-{ return char_type[c] == EL;
+{ return c < 128 && char_type[c] == EL;
 }
 
 static inline int
+is_digit(int c)
+{ return c >= '0' && c <= '9';
+}
+
+static inline int
+is_ascii_letter(int c)
+{ return c < 128 && ((char_type[c] & (LC|UC)) != 0);
+}
+
+static int
+is_pn_chars_u(int c)
+{ return wcis_pn_chars_base(c) || c == '_' || c == ':';
+}
+
+static int
+is_pn_chars(int c)
+{ return ( wcis_pn_chars_base(c) ||
+	   is_digit(c) ||
+	   c == '-' ||
+	   wcis_pn_chars_extra(c)
+	 );
+}
+
+
+static const char hexval0[] =
+{/*0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F  */
+  -1,
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, /* 00-0f */
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, /* 10-1F */
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, /* 20-2F */
+   0,  1,  2,  3,  4,  5,  6,  7,  8,  9, -1, -1, -1, -1, -1, -1, /* 30-3F */
+  -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, /* 40-4F */
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, /* 50-5F */
+  -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1  /* 60-6F */
+};
+
+static const char* hexval = &hexval0[1];
+
+static inline int
 hexd(int c)
-{ if ( c>='0' && c<='9' )
-    return c-'0';
-  if ( c>='A' && c<='F' )
-    return c-'A'+10;
-  return -1;
+{ return (c <= 'f' ? hexval[c] : -1);
 }
 
 
@@ -124,7 +151,7 @@ syntax_error(IOSTREAM *in, const char *msg)
   { int c;
 
     do
-    { c = Sgetc(in);
+    { c = Sgetcode(in);
     } while(c != '\n' && c != -1);
 
     return PL_raise_exception(ex);
@@ -134,64 +161,100 @@ syntax_error(IOSTREAM *in, const char *msg)
 }
 
 
-
 		 /*******************************
 		 *	       BUFFER		*
 		 *******************************/
 
+#ifdef STRING_BUF_DEBUG
+#define FAST_BUF_SIZE 1
+#else
 #define FAST_BUF_SIZE 512
+#endif
 
 typedef struct string_buffer
-{ pl_wchar_t fast[FAST_BUF_SIZE];
-  pl_wchar_t *buf;
-  pl_wchar_t *in;
-  pl_wchar_t *end;
+{ wchar_t fast[FAST_BUF_SIZE];
+  wchar_t *buf;
+  wchar_t *in;
+  wchar_t *end;
+#ifdef STRING_BUF_DEBUG
+  int	   discarded;
+#endif
 } string_buffer;
 
-#define initBuf(b)   { (b)->buf = (b)->fast; \
-		       (b)->in  = (b)->buf; \
-		       (b)->end = &(b)->fast[FAST_BUF_SIZE]; \
-		     }
-#define addBuf(b,c)  ( (b)->in < (b)->end ? (*(b)->in++ = (c)) \
-					  : growBuffer(b, c) )
-
-#define bufSize(b)   ( (b)->in - (b)->buf )
-#define baseBuf(b)   ( (b)->buf )
-
-#define discardBuf(b) if ( (b)->buf != (b)->fast ) free((b)->buf)
 
 static int
 growBuffer(string_buffer *b, int c)
 { if ( b->buf == b->fast )
-  { pl_wchar_t *new = malloc((FAST_BUF_SIZE*2)*sizeof(pl_wchar_t));
+  { wchar_t *new = malloc((FAST_BUF_SIZE*2)*sizeof(wchar_t));
 
     if ( new )
-    { memcpy(new, b->fast, (FAST_BUF_SIZE*2)*sizeof(pl_wchar_t));
+    { memcpy(new, b->fast, sizeof(b->fast));
       b->buf = new;
       b->in  = b->buf+FAST_BUF_SIZE;
       b->end = b->in+FAST_BUF_SIZE;
       *b->in++ = c;
 
-      return c;
+      return TRUE;
     }
   } else
   { size_t sz = b->end - b->buf;
-    pl_wchar_t *new = realloc(b->buf, sz*sizeof(pl_wchar_t)*2);
+    wchar_t *new = realloc(b->buf, sz*sizeof(wchar_t)*2);
 
     if ( new )
     { b->buf = new;
       b->in  = new+sz;
       b->end = b->in+sz;
+      *b->in++ = c;
 
-      return c;
+      return TRUE;
     }
   }
 
   PL_resource_error("memory");
-  return 0;
+  return FALSE;
 }
 
 
+static inline void
+initBuf(string_buffer *b)
+{ b->buf = b->fast;
+  b->in  = b->buf;
+  b->end = &b->fast[FAST_BUF_SIZE];
+#ifdef STRING_BUF_DEBUG
+  b->discarded = FALSE;
+#endif
+}
+
+
+static inline void
+discardBuf(string_buffer *b)
+{
+#ifdef STRING_BUF_DEBUG
+  assert(b->discarded == FALSE);
+  b->discarded = TRUE;
+#endif
+  if ( b->buf != b->fast )
+    free(b->buf);
+}
+
+
+static inline int
+addBuf(string_buffer *b, int c)
+{ if ( b->in < b->end )
+  { *b->in++ = c;
+    return TRUE;
+  }
+
+  return growBuffer(b, c);
+}
+
+
+static inline int
+bufSize(string_buffer *b)
+{ return b->in - b->buf;
+}
+
+#define baseBuf(b)   ( (b)->buf )
 
 
 		 /*******************************
@@ -203,7 +266,7 @@ skip_ws(IOSTREAM *in, int *cp)
 { int c = *cp;
 
   while(is_ws(c))
-    c = Sgetc(in);
+    c = Sgetcode(in);
 
   *cp = c;
 
@@ -216,11 +279,11 @@ skip_comment_line(IOSTREAM *in, int *cp)
 { int c;
 
   do
-  { c = Sgetc(in);
+  { c = Sgetcode(in);
   } while ( c != -1 && !is_eol(c) );
 
   while(is_eol(c))
-    c = Sgetc(in);
+    c = Sgetcode(in);
 
   *cp = c;
 
@@ -237,11 +300,13 @@ skip_eol(IOSTREAM *in, int *cp)
       return TRUE;
     if ( c == '\r' )
     { if ( Speekcode(in) == '\n' )
-	(void)Sgetc(in);
+	(void)Sgetcode(in);
       return TRUE;
     }
     if ( c == EOF )
       return TRUE;
+    if ( c == '#' )
+      return skip_comment_line(in, cp);
 
     return syntax_error(in, "end-of-line expected");
   } else
@@ -254,49 +319,62 @@ skip_eol(IOSTREAM *in, int *cp)
 		 *	      READING		*
 		 *******************************/
 
+#define ESCAPED_CODE (-1)
+
 static int
 read_hex(IOSTREAM *in, int *cp, int len)
 { int c = 0;
 
   while(len-- > 0)
   { int v0;
-    int c2 = Sgetc(in);
+    int c2 = Sgetcode(in);
 
     if ( (v0 = hexd(c2)) >= 0 )
     { c <<= 4;
       c += v0;
     } else
-      return syntax_error(in, "illegal unicode escape");
+    { return syntax_error(in, "illegal unicode escape");
+    }
   }
 
   *cp = c;
-  return TRUE;
+  return ESCAPED_CODE;
 }
 
-#define ESCAPED_CODE (-1)
 
 static int
-get_code(IOSTREAM *in, int *cp)
-{ int c = Sgetc(in);
+get_iri_code(IOSTREAM *in, int *cp)
+{ int c = Sgetcode(in);
 
-  if ( c != '\\' )
-  { if ( char_type[c] != IV )
-    { *cp = c;
-      return TRUE;
-    } else
-      return syntax_error(in, "illegal character");
-  } else
-  { int c2 = Sgetc(in);
+  switch(c)
+  { case '\r':
+    case '\n':
+      return syntax_error(in, "newline in uriref");
+    case EOF:
+      return syntax_error(in, "EOF in uriref");
+    case '<':
+    case '"':
+    case '{':
+    case '}':
+    case '|':
+    case '^':
+    case '`':
+      return syntax_error(in, "Illegal character in uriref");
+    case '\\':
+    { int c2 = Sgetcode(in);
 
-    switch(c2)
-    { case 't':		*cp = '\t'; return ESCAPED_CODE;
-      case 'n':		*cp = '\n'; return ESCAPED_CODE;
-      case 'r':		*cp = '\r'; return ESCAPED_CODE;
-      case '"':		*cp =  '"'; return ESCAPED_CODE;
-      case '\\':	*cp = '\\'; return ESCAPED_CODE;
-      case 'u':		return read_hex(in, cp, 4);
-      case 'U':		return read_hex(in, cp, 8);
-      default:		return syntax_error(in, "illegal escape");
+      switch(c2)
+      { case 'u':	return read_hex(in, cp, 4);
+	case 'U':	return read_hex(in, cp, 8);
+	default:	return syntax_error(in, "illegal escape");
+      }
+    }
+    default:
+    { if ( c > ' ' )
+      { *cp = c;
+	return TRUE;
+      }
+      return syntax_error(in, "Illegal control character in uriref");
     }
   }
 }
@@ -310,22 +388,15 @@ read_uniref(IOSTREAM *in, term_t subject, int *cp)
   for(;;)
   { int rc;
 
-    if ( (rc=get_code(in, &c)) == TRUE )
+    if ( (rc=get_iri_code(in, &c)) == TRUE )
     { switch(c)
       { case '>':
 	{ int rc = PL_unify_wchars(subject, PL_ATOM,
 				   bufSize(&buf), baseBuf(&buf));
 	  discardBuf(&buf);
-	  *cp = Sgetc(in);
+	  *cp = Sgetcode(in);
 	  return rc;
 	}
-	case EOF:
-	  discardBuf(&buf);
-	  return syntax_error(in, "EOF in uriref");
-	case '\n':
-	case '\r':
-	  discardBuf(&buf);
-	  return syntax_error(in, "newline in uriref");
 	default:
 	  if ( !addBuf(&buf, c) )
 	  { discardBuf(&buf);
@@ -349,20 +420,24 @@ static int
 read_node_id(IOSTREAM *in, term_t subject, int *cp)
 { int c;
 
-  c = Sgetc(in);
+  c = Sgetcode(in);
   if ( c != ':' )
     return syntax_error(in, "invalid nodeID");
 
-  c = Sgetc(in);
-  if ( (char_type[c] & (LC|UC)) )
+  c = Sgetcode(in);
+  if ( is_pn_chars_u(c) || is_digit(c) )
   { string_buffer buf;
 
     initBuf(&buf);
     addBuf(&buf, c);
     for(;;)
-    { c = Sgetc(in);
+    { int c2;
 
-      if ( (char_type[c] & (LC|UC|DI)) )
+      c = Sgetcode(in);
+
+      if ( is_pn_chars(c) )
+      { addBuf(&buf, c);
+      } else if ( c == '.' && (is_pn_chars((c2=Speekcode(in))) || c2 == '.') )
       { addBuf(&buf, c);
       } else
       { term_t av = PL_new_term_refs(1);
@@ -388,15 +463,15 @@ read_lan(IOSTREAM *in, term_t lan, int *cp)
   string_buffer buf;
   int rc;
 
-  c = Sgetc(in);
-  if ( !(char_type[c]&LC) )
-    return syntax_error(in, "language tag must start with a-z");
+  c = Sgetcode(in);
+  if ( !is_ascii_letter(c) )
+    return syntax_error(in, "language tag must start with a-zA-Z");
 
   initBuf(&buf);
   addBuf(&buf, c);
   for(;;)
-  { c = Sgetc(in);
-    if ( (char_type[c]&LC) )
+  { c = Sgetcode(in);
+    if ( is_ascii_letter(c) )
     { addBuf(&buf, c);
     } else
     { break;
@@ -404,15 +479,15 @@ read_lan(IOSTREAM *in, term_t lan, int *cp)
   }
   while(c=='-')
   { addBuf(&buf, c);
-    c = Sgetc(in);
-    if ( !(char_type[c]&(LC|DI)) )
+    c = Sgetcode(in);
+    if ( !is_ascii_letter(c) )
     { discardBuf(&buf);
       return syntax_error(in, "Illegal language tag");
     }
     addBuf(&buf, c);
     for(;;)
-    { c = Sgetc(in);
-      if ( (char_type[c]&(LC|DI)) )
+    { c = Sgetcode(in);
+      if ( is_ascii_letter(c) )
       { addBuf(&buf, c);
       } else
       { break;
@@ -478,6 +553,37 @@ wrap_literal(term_t lit)
 
 
 static int
+get_string_code(IOSTREAM *in, int *cp)
+{ int c = Sgetcode(in);
+
+  switch(c)
+  { case '\r':
+    case '\n':
+      return syntax_error(in, "newline in string");
+    case '\\':
+    { int c2 = Sgetcode(in);
+
+      switch(c2)
+      { case 'b':	*cp = '\b'; return ESCAPED_CODE;
+	case 't':	*cp = '\t'; return ESCAPED_CODE;
+	case 'f':	*cp = '\f'; return ESCAPED_CODE;
+	case 'n':	*cp = '\n'; return ESCAPED_CODE;
+	case 'r':	*cp = '\r'; return ESCAPED_CODE;
+	case '"':	*cp =  '"'; return ESCAPED_CODE;
+	case '\\':	*cp = '\\'; return ESCAPED_CODE;
+	case 'u':	return read_hex(in, cp, 4);
+	case 'U':	return read_hex(in, cp, 8);
+	default:	return syntax_error(in, "illegal escape");
+      }
+    }
+    default:
+      *cp = c;
+      return TRUE;
+  }
+}
+
+
+static int
 read_literal(IOSTREAM *in, term_t literal, int *cp)
 { int c;
   string_buffer buf;
@@ -486,10 +592,10 @@ read_literal(IOSTREAM *in, term_t literal, int *cp)
   for(;;)
   { int rc;
 
-    if ( (rc=get_code(in, &c)) == TRUE )
+    if ( (rc=get_string_code(in, &c)) == TRUE )
     { switch(c)
       { case '"':
-	{ c = Sgetc(in);
+	{ c = Sgetcode(in);
 
 	  switch(c)
 	  { case '@':
@@ -509,12 +615,12 @@ read_literal(IOSTREAM *in, term_t literal, int *cp)
 	      }
 	    }
 	    case '^':
-	    { c = Sgetc(in);
+	    { c = Sgetcode(in);
 
 	      if ( c == '^' )
 	      { term_t av = PL_new_term_refs(2);
 
-		c = Sgetc(in);
+		c = Sgetcode(in);
 		if ( c == '<' )
 		{ if ( read_uniref(in, av+0, cp) )
 		  { int rc = ( PL_unify_wchars(av+1, PL_ATOM,
@@ -598,7 +704,7 @@ check_full_stop(IOSTREAM *in, int *cp)
 { int c = *cp;
 
   if ( c == '.' )
-  { *cp = Sgetc(in);
+  { *cp = Sgetcode(in);
 
     return TRUE;
   }
@@ -616,7 +722,7 @@ read_ntriple(term_t from, term_t triple)
   if ( !PL_get_stream_handle(from, &in) )
     return FALSE;
 
-  c=Sgetc(in);
+  c=Sgetcode(in);
 next:
   rc = skip_ws(in, &c);
 
@@ -628,7 +734,7 @@ next:
     { rc = PL_unify_atom(triple, ATOM_end_of_file);
     } else if ( (char_type[c]&EL) )
     { if ( skip_eol(in, &c) )
-      { c=Sgetc(in);
+      { c=Sgetcode(in);
 	goto next;
       } else
 	return FALSE;

@@ -1,11 +1,10 @@
-/*  $Id$
-
-    Part of SWI-Prolog
+/*  Part of SWI-Prolog
 
     Author:        Jan Wielemaker
-    E-mail:        wielemak@science.uva.nl
+    E-mail:        J.Wielemaker@vu.nl
     WWW:           http://www.swi-prolog.org
-    Copyright (C): 1985-2005, University of Amsterdam
+    Copyright (C): 1985-2013, University of Amsterdam
+			      VU University Amsterdam
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License
@@ -61,7 +60,7 @@ for languages on top of RDF:
 	  level language (used in this module)
 
 	* Extend rdf/3 relation with triples _implied_ by the high-level
-	  semantics.  This approach is taken by the SeRQL system.
+	  semantics.  This approach is taken by ClioPatria.
 */
 
 		 /*******************************
@@ -107,10 +106,7 @@ rdfs_subproperty_of(SubProperty, Property) :-
 rdfs_subclass_of(Class, Super) :-
 	rdf_equal(rdfs:'Resource', Resource),
 	Super == Resource, !,
-	(   nonvar(Class)
-	->  true			% must check for being a class?
-	;   rdfs_individual_of(Class, rdfs:'Class')
-	).
+	rdfs_individual_of(Class, rdfs:'Class').
 rdfs_subclass_of(Class, Super) :-
 	rdf_reachable(Class, rdfs:subClassOf, Super).
 rdfs_subclass_of(Class, Super) :-
@@ -155,7 +151,9 @@ rdfs_subclass_of(Class, Super) :-	% production 2.4
 rdfs_individual_of(Resource, Class) :-
 	nonvar(Resource), !,
 	(   nonvar(Class)
-	->  (   rdfs_individual_of_r_c(Resource, Class)
+	->  (   rdf_equal(Class, rdfs:'Resource')
+	    ->	true
+	    ;	rdfs_individual_of_r_c(Resource, Class)
 	    ->	true
 	    )
 	;   rdfs_individual_of_r_c(Resource, Class)
@@ -170,13 +168,15 @@ rdfs_individual_of(Resource, Class) :-
 rdfs_individual_of(_Resource, _Class) :-
 	throw(error(instantiation_error, _)).
 
+%%	rdfs_individual_of_r_c(+Resource, ?Class) is nondet.
+
 rdfs_individual_of_r_c(literal(_), Class) :- !,
 	rdfs_subclass_of(Class, rdfs:'Literal').
 rdfs_individual_of_r_c(Resource, Class) :-
-	rdf_has(Resource, rdf:type, MyClass),
-	rdfs_subclass_of(MyClass, Class).
-rdfs_individual_of_r_c(_, Class) :-
-	rdf_equal(Class, rdfs:'Resource').
+	(   rdf_has(Resource, rdf:type, MyClass)
+	*-> rdfs_subclass_of(MyClass, Class)
+	;   rdf_equal(Class, rdfs:'Resource')
+	).
 
 
 %%	rdfs_label(+Resource, -Label).

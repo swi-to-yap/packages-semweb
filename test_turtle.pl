@@ -1,11 +1,10 @@
-/*  $Id$
-
-    Part of SWI-Prolog
+/*  Part of SWI-Prolog
 
     Author:        Jan Wielemaker
     E-mail:        J.Wielemaker@cs.vu.nl
     WWW:           http://www.swi-prolog.org
-    Copyright (C): 1985-2009, University of Amsterdam
+    Copyright (C): 1985-2013, University of Amsterdam
+			      VU University Amsterdam
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License
@@ -75,6 +74,7 @@ test_turtle :-
 	this_dir(Dir),
 	atom_concat(Dir, '/Tests/Turtle', TestDir),
 	test_dir(TestDir),
+	garbage_collect_atoms,			% leak checks
 	(   error(_)
 	->  fail
 	;   aggregate_all(count, passed(_), Passed),
@@ -90,20 +90,12 @@ test_turtle(File) :-
 
 %%	blocked(?Test)
 %
-%	True if Test is blocked.  Currently blocked:
-%
-%	    $ test-29.ttl :
-%	    URI test.  Contains ...%&...  Should or shouldn't we
-%	    do %-decoding!?  Surely there are datasets our there
-%	    that expect us to do so.
-%
-%	    $ test-28.ttl :
-%	    Test numbers.  I don't understand this test and I don't
-%	    understand the *three* files: test-28.ttl, test-28.out
-%	    and test-28.out.ttl.
+%	True if Test is blocked.
 
-blocked('test-28.ttl').
-blocked('test-29.ttl').
+:- dynamic
+	blocked/1.
+
+%blocked('test-28.ttl').
 
 
 %:- debug(test_turtle).

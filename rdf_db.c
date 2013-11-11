@@ -6037,7 +6037,7 @@ get_partial_triple(rdf_db *db,
       { if ( !get_literal(db, a, lit, 0) )
 	  return FALSE;
       } else
-      { if ( !get_atom_or_var_ex(a, &lit->value.string) )
+      { if ( !PL_get_atom_ex(a, &lit->value.string) )
 	  return FALSE;
 	lit->objtype = OBJ_STRING;
       }
@@ -7171,8 +7171,12 @@ rdf_estimate_complexity(term_t subject, term_t predicate, term_t object,
 #endif
   } else
   { size_t key = triple_hash_key(&t, t.indexed);
-    triple_hash *hash = &db->hash[ICOL(t.indexed)];
+    int icol = ICOL(t.indexed);
+    triple_hash *hash = &db->hash[icol];
     size_t count;
+
+    if ( !db->hash[icol].created )
+      create_triple_hashes(db, 1, &icol);
 
     c = 0;
     for(count=hash->bucket_count_epoch; count <= hash->bucket_count; count *= 2)

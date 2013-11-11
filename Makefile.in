@@ -18,8 +18,7 @@ DOC=semweb
 include ../Makefile.defs
 include @srcdir@/common.mk
 CFLAGS+= -I.
-LIBDIR=$(PLLIBDIR)/semweb
-PKGDOC=$(PKGDOCDIR)/semweb
+PKGPLLIBDIR=$(PLLIBDIR)/semweb
 
 # Useful alternatives for debugging
 # COFLAGS+=-gdwarf-2 -g3 -fno-inline
@@ -36,22 +35,22 @@ all:		$(TARGETS)
 rdf_db.@SO@:	$(RDFDBOBJ)
 		$(LD) $(LDSOFLAGS) -o $@ $(RDFDBOBJ) $(LIBS) $(LIBPLSO)
 turtle.@SO@:	turtle.o
-		$(LD) $(LDSOFLAGS) -o $@ turtle.o $(LIBS) $(LIBPLSO)
+		$(LD) $(LDSOFLAGS) -o $@ turtle.o murmur.o $(LIBS) $(LIBPLSO)
 ntriples.@SO@:	ntriples.o
 		$(LD) $(LDSOFLAGS) -o $@ ntriples.o $(LIBS) $(LIBPLSO)
 
 turtle.o:	$(srcdir)/turtle.c $(srcdir)/turtle_chars.c
 
-install:	$(TARGETS) $(SRCLIBPL)
-		mkdir -p $(DESTDIR)$(LIBDIR)
+install:	$(TARGETS) $(LIBPL)
+		mkdir -p $(DESTDIR)$(PKGPLLIBDIR)
 		mkdir -p $(DESTDIR)$(SOLIBDIR)
 		for f in $(TARGETS); do \
 		  $(INSTALL_PROGRAM) $$f $(DESTDIR)$(SOLIBDIR); \
 		done
 		for f in $(DATA) $(LIBPL); do \
-		  $(INSTALL_DATA) $(srcdir)/$$f $(DESTDIR)$(LIBDIR); \
+		  $(INSTALL_DATA) $$f $(DESTDIR)$(PKGPLLIBDIR); \
 		done
-		$(INSTALL_DATA) $(srcdir)/README $(DESTDIR)$(LIBDIR)/README$(TXTEXT)
+		$(INSTALL_DATA) README $(DESTDIR)$(PKGPLLIBDIR)/README$(TXTEXT)
 		$(MKPKGINDEX)
 		$(MKINDEX)
 
@@ -74,7 +73,7 @@ pdf-install::
 
 uninstall::
 		(cd $(SOLIBDIR) && rm -f $(TARGETS))
-		(cd $(PLBASE)/library && rm -f $(LIBPL))
+		(cd $(PKGPLLIBDIR) && rm -f $(LIBPL))
 		$(MKINDEX)
 
 tags::
@@ -114,13 +113,19 @@ rdfdb.tex:	$(srcdir)/doc/rdfdb.txt
 # Check
 ################################################################
 
+# To run test_turtle2.pl, ensure that the environment
+# variable TEST_TURTLE_MANIFEST points to the W3C RDF-WG Turtle test
+# manifest.
+
 check::
-		(cd $(srcdir) && $(PL) -q -f test_rdf_db.pl -g test_rdf_db,halt -t 'halt(1)' )
-		(cd $(srcdir) && $(PL) -q -f litmap_test.pl -g test,halt -t 'halt(1)' )
-		(cd $(srcdir) &&$(PL) -q -f test.pl -g run_tests,halt -t 'halt(1)' )
-		(cd $(srcdir) && $(PL) -q -f test_subprop.pl -g test_subprop,halt -t 'halt(1)' )
-		(cd $(srcdir) && $(PL) -q -f test_turtle.pl -g test_turtle,halt -t 'halt(1)' )
-		(cd $(srcdir) && $(PL) -q -f test_ntriples.pl -g test_ntriples,halt -t 'halt(1)' )
+		$(PL) -q -f $(srcdir)/test_rdf_db.pl -g test_rdf_db,halt -t 'halt(1)'
+		$(PL) -q -f $(srcdir)/litmap_test.pl -g test,halt -t 'halt(1)'
+		$(PL) -q -f $(srcdir)/test.pl -g run_tests,halt -t 'halt(1)'
+		$(PL) -q -f $(srcdir)/test_con.pl -g run,halt -t 'halt(1)'
+		$(PL) -q -f $(srcdir)/test_subprop.pl -g test_subprop,halt -t 'halt(1)'
+		$(PL) -q -f $(srcdir)/test_turtle.pl -g test_turtle,halt -t 'halt(1)'
+		$(PL) -q -f $(srcdir)/test_turtle2.pl -g test_turtle2,halt -t 'halt(1)'
+		$(PL) -q -f $(srcdir)/test_ntriples.pl -g test_ntriples,halt -t 'halt(1)'
 
 ################################################################
 # Clean

@@ -57,6 +57,7 @@ streaming RDF and graph manipulation tasks.
 
 
 \section{Introduction}
+\label{sec:semweb-intro}
 
 The core of the SWI-Prolog package \file{semweb} is an efficient
 main-memory RDF store written in C that is tightly integrated with
@@ -126,6 +127,7 @@ for prototyping systems that deal with streaming RDF data.
 
 
 \section{Scalability}
+\label{sec:semweb-scalability}
 
 Depending on the OS and further application restrictions, the SWI-Prolog
 RDF stores scales to about 15~million triples on 32-bit hardware. On
@@ -136,7 +138,7 @@ data and/or restore the database from the persistent file backup.
 Performance depends highly on hardware, concurrent performance and
 whether or not the data is spread over multiple (named) graphs that can
 be loaded in parallel. Restoring over 20~million triples per minute is
-feasible on medium hardware (Intel i7/2600 running Ubuntu 12.10).
+feasible on medium hardware (Intel i7/{2600} running Ubuntu 12.10).
 
 
 		 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -145,6 +147,7 @@ feasible on medium hardware (Intel i7/2600 running Ubuntu 12.10).
 
 
 \section{library(semweb/rdf_db): The RDF database}
+\label{sec:semweb-rdf-db}
 
 \input{rdfdb}
 
@@ -269,7 +272,7 @@ different input sources (e.g.\ http) and different strategies for
 caching results.
 
 \subsection{Hooks into the RDF library}
-\label{sec:hooks}
+\label{sec:semweb-hooks}
 
 The hooks below are used to add new RDF file formats and sources from
 which to load data to the library. They are used by the modules
@@ -280,7 +283,8 @@ source-code if you want to add new formats or locations.
     \item[\pllib{library(semweb/rdf_turtle)}]
 Load files in the Turtle format.  See \secref{rdfturtle}.
     \item[\pllib{library(semweb/rdf_zlib_plugin)}]
-Load \program{gzip} compressed files transparently.  See \secref{zlib}.
+Load \program{gzip} compressed files transparently. See
+\secref{semweb-zlib}.
     \item[\pllib{library(semweb/rdf_http_plugin)}]
 Load RDF documents from HTTP servers.  See \secref{http}.
     \item[\pllib{library(semweb/rdf_persistency)}]
@@ -324,7 +328,7 @@ True if \arg{Protocol} is a URL protocol recognised by rdf_load/2.
 
 
 \subsection{library(semweb/rdf_zlib_plugin): Reading compressed RDF}
-\label{sec:zlib}
+\label{sec:semweb-zlib}
 
 \index{gz, format}\index{gzip}\index{compressed data}%
 This module uses the \pllib{zlib} library to load compressed files
@@ -812,6 +816,7 @@ taken in the \pllib{semweb/rdfs.p}l library, providing calls like
 
 
 \subsection{Hierarchy and class-individual relations}
+\label{sec:semweb-rdfs-classes}
 
 The predicates in this section explore the \const{rdfs:subPropertyOf},
 \const{rdfs:subClassOf} and \const{rdf:type} relations.  Note that the
@@ -853,6 +858,7 @@ by \arg{Class}.
 \end{description}
 
 \subsection{Collections and Containers}
+\label{sec:semweb-rdfs-containers}
 
 \index{parseType,Collection}%
 \index{Collection,parseType}%
@@ -895,6 +901,7 @@ database \arg{DB}.
 
 
 \section{Related packages}
+\label{sec:semweb-related-packages}
 
 \index{ClioPatria}\index{SPARQL}%
 The core infrastructure for storing and querying RDF is provided by this
@@ -917,6 +924,7 @@ external DL reasoner using DIG.
 		 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Version 3 release notes}
+\label{sec:semweb-version3}
 
 RDF-DB version 3 is a major redesign of the SWI-Prolog RDF
 infrastructure. Nevertheles, version~3 is almost perfectly upward
