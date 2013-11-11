@@ -24,6 +24,9 @@ PKGPLLIBDIR=$(PLLIBDIR)/semweb
 # COFLAGS+=-gdwarf-2 -g3 -fno-inline
 # COFLAGS=-gdwarf-2 -g3
 
+LIBSRCPL=	$(addprefix $(srcdir)/, $(LIBPL))
+SRCDATA=	$(addprefix $(srcdir)/, $(DATA))
+
 TARGETS=	rdf_db.@SO@ turtle.@SO@ ntriples.@SO@
 
 RDFDBOBJ=	rdf_db.o atom.o md5.o atom_map.o debug.o \
@@ -41,16 +44,16 @@ ntriples.@SO@:	ntriples.o
 
 turtle.o:	$(srcdir)/turtle.c $(srcdir)/turtle_chars.c
 
-install:	$(TARGETS) $(LIBPL)
+install:	$(TARGETS) $(LIBSRCPL)
 		mkdir -p $(DESTDIR)$(PKGPLLIBDIR)
 		mkdir -p $(DESTDIR)$(SOLIBDIR)
 		for f in $(TARGETS); do \
 		  $(INSTALL_PROGRAM) $$f $(DESTDIR)$(SOLIBDIR); \
 		done
-		for f in $(DATA) $(LIBPL); do \
+		for f in $(SRCDATA) $(LIBSRCPL); do \
 		  $(INSTALL_DATA) $$f $(DESTDIR)$(PKGPLLIBDIR); \
 		done
-		$(INSTALL_DATA) README $(DESTDIR)$(PKGPLLIBDIR)/README$(TXTEXT)
+		$(INSTALL_DATA) $(srcdir)/README $(DESTDIR)$(PKGPLLIBDIR)/README$(TXTEXT)
 		$(MKPKGINDEX)
 		$(MKINDEX)
 
