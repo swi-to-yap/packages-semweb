@@ -44,7 +44,7 @@ ntriples.@SO@:	ntriples.o
 
 turtle.o:	$(srcdir)/turtle.c $(srcdir)/turtle_chars.c
 
-install:	$(TARGETS) $(LIBSRCPL)
+install:	$(TARGETS) $(LIBSRCPL)  install-examples
 		mkdir -p $(DESTDIR)$(PKGPLLIBDIR)
 		mkdir -p $(DESTDIR)$(SOLIBDIR)
 		for f in $(TARGETS); do \
