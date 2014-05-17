@@ -3330,6 +3330,9 @@ triple_hash_quality(rdf_db *db, int index, int sample)
 
 #ifdef O_DEBUG
 void
+print_triple_hash(rdf_db *db, int index, int sample);
+
+void
 print_triple_hash(rdf_db *db, int index, int sample)
 { triple_hash *hash = &db->hash[index];
   int i, step;
@@ -6451,7 +6454,7 @@ start_duplicate_admin(rdf_db *db)
 		 *	    TRANSACTIONS	*
 		 *******************************/
 
-int
+static int
 put_begin_end(term_t t, functor_t be, int level)
 { term_t av;
 
@@ -8953,6 +8956,8 @@ rdf_version(term_t v)
 	FUNCTOR_ ## n ## a = PL_new_functor(PL_new_atom(#n), a)
 #define NDET PL_FA_NONDETERMINISTIC
 #define META PL_FA_TRANSPARENT
+
+install_t install_rdf_db(void);
 
 install_t
 install_rdf_db(void)
