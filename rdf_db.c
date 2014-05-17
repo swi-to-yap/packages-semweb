@@ -4271,7 +4271,7 @@ int
 prelink_triple(rdf_db *db, triple *t, query *q)
 { register_triple(db, t);
   if ( t->resolve_pred )
-  { t->predicate.r = lookup_predicate(db, t->predicate.u);
+  { t->predicate.r = lookup_predicate(db, t->predicate.u_a);
     t->resolve_pred = FALSE;
   }
   if ( t->object_is_literal )
@@ -5322,7 +5322,7 @@ load_triple(rdf_db *db, IOSTREAM *in, ld_context *ctx)
   t->subject_id = ATOM_ID(load_atom(db, in, ctx));
   if ( ctx->version < 3 )
   { t->resolve_pred = TRUE;
-    t->predicate.u = load_atom(db, in, ctx);
+    t->predicate.u_a = load_atom(db, in, ctx);
   } else
   { t->predicate.r = load_predicate(db, in, ctx);
   }

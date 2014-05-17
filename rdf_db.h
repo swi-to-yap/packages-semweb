@@ -264,7 +264,7 @@ typedef struct literal
     int64_t	integer;
     double	real;
     struct
-    { record_t  record;
+    { char *  record;
       size_t	len;
     } term;				/* external record */
   } value;
@@ -292,7 +292,7 @@ typedef struct triple
   atom_id	graph_id;		/* where it comes from */
   union
   { predicate*	r;			/* resolved: normal DB */
-    atom_t	u;			/* used by rdf_load_db_/3 */
+    atom_t  u_a;			/* used by rdf_load_db_/3 */
   } predicate;
   union
   { literal *	literal;
