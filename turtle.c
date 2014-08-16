@@ -47,6 +47,8 @@
 #define swprintf _snwprintf
 #endif
 
+install_t install_turtle(void);
+
 static functor_t FUNCTOR_error2;
 static functor_t FUNCTOR_existence_error2;
 static functor_t FUNCTOR_syntax_error1;

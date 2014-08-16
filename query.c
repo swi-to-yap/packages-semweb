@@ -48,6 +48,7 @@ generations:
 
 static void	init_query_stack(rdf_db *db, query_stack *qs);
 
+query *alloc_query(query_stack *qs);
 
 		 /*******************************
 		 *	    THREAD DATA		*
