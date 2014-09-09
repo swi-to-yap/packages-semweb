@@ -11,6 +11,7 @@
 :- use_module(library(pce)).
 :- endif.
 :- use_module(library(debug)).
+:- use_module(library(error)).
 :- use_module(library(lists)).
 :- use_module(library(random)).
 :- use_module(library(broadcast)).

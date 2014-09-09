@@ -36,6 +36,8 @@
 /** <module> Generate turtle_chars.c
 */
 
+:- use_module(library(lists)).
+
 run :-
 	mkclassify('turtle_chars.c', 'static ').
 

@@ -5,6 +5,7 @@
 :- use_module(library(dcg/basics)).
 :- use_module(library(debug)).
 :- use_module(library(option)).
+:- use_module(library(lists)).
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 This module creates a simple map   for  removing diacritics from Unicode
