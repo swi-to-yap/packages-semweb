@@ -28,7 +28,7 @@
 #define O_DEBUG 1
 
 #ifdef O_DEBUG
-int		rdf_debuglevel();
+int		rdf_debuglevel(void);
 foreign_t	rdf_debug(term_t level);
 
 #define DEBUG(n, g) if ( rdf_debuglevel() >= (n) ) { g; }

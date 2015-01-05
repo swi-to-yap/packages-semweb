@@ -26,6 +26,8 @@
 #include <string.h>
 #include "turtle_chars.c"
 
+install_t install_ntriples(void);
+
 static atom_t ATOM_end_of_file;
 
 static functor_t FUNCTOR_node1;

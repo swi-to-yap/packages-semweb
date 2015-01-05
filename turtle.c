@@ -258,6 +258,8 @@ static resource resource_constants[] =
   RES_CONST(XSD_BOOLEAN)	/* 7 */
 };
 
+hash_cell *lookup_hash_map(hash_map *hm, const wchar_t *name);
+
 		 /*******************************
 		 *	       BUFFER		*
 		 *******************************/
@@ -509,7 +511,6 @@ wcs_hash(const wchar_t *name)
 
   return rdf_murmer_hash(name, len*sizeof(wchar_t), MURMUR_SEED);
 }
-
 
 hash_cell *
 lookup_hash_map(hash_map *hm, const wchar_t *name)

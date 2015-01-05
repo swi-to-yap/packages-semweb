@@ -449,7 +449,7 @@ static const int alt_index[16] =
 
 
 static void
-check_index_tables()
+check_index_tables(void)
 { int i, ic;
 
   for(i=0; i<16; i++)

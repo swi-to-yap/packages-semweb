@@ -135,6 +135,8 @@ typedef struct node_data_ex
 #define LOCK(map)			simpleMutexLock(&map->lock)
 #define UNLOCK(map)			simpleMutexUnlock(&map->lock)
 
+install_t install_atom_map(void);
+term_t rdf_statistics_literal_map(term_t map, term_t key);
 
 		 /*******************************
 		 *	     BASIC STUFF	*
@@ -157,7 +159,7 @@ static atom_t	 ATOM_key;
 	ATOM_ ## n = PL_new_atom(#n)
 
 static void
-init_functors()
+init_functors(void)
 { FUNCTOR_atom_map1 = PL_new_functor(PL_new_atom("$literal_map"), 1);
 
   MKFUNCTOR(size, 2);
