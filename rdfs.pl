@@ -184,8 +184,8 @@ rdfs_individual_of_r_c(Resource, Class) :-
 %%	rdfs_label(-Resource, +Label).
 %
 %	Convert between class and label.  If the label is generated from
-%	the resource the it uses both rdf:label and its sub-properties,
-%	but labels registered with rdf:label are returned first.
+%	the resource the it uses both `rdfs:label` and its sub-properties,
+%	but labels registered with `rdfs:label` are returned first.
 
 rdfs_label(Resource, Label) :-
 	rdfs_label(Resource, _, Label).
@@ -262,7 +262,7 @@ after_char(Atom, Char, Rest) :-
 %%	label_of(+Resource, ?Lang, ?Label) is nondet.
 %
 %	True if rdf_has(Resource, rdfs:label,   literal(Lang, Label)) is
-%	true,  but  guaranteed  to  generate    rdfs:label   before  any
+%	true,  but  guaranteed  to  generate    `rdfs:label`   before  any
 %	subproperty thereof.
 
 label_of(Resource, Lang, Label) :-
