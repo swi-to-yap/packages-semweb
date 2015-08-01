@@ -1004,11 +1004,16 @@ rdf_is_literal(literal(Value)) :-
 %	True when value is  the   appropriate  Prolog  representation of
 %	Literal in the RDF _|value space|_.  Current mapping:
 %
-%	  | Plain literals		| Atom			  |
-%	  | Language tagged literal	| Atom holding plain text |
-%	  | xsd:string			| Atom			  |
-%	  | rdf:XMLLiteral		| XML DOM Tree		  |
-%	  | Numeric XSD type		| Number		  |
+%   | **RDF datatype**       | **Prolog type**                    |
+%	  | Simple literal         | Atom                               |
+%	  | Language-tagged string | Atom holding only the lexical form |
+%	  | `xsd:string`           | Atom                               |
+%	  | `rdf:XMLLiteral`       | XML DOM Tree                       |
+%	  | Numeric XSD type       | Number                             |
+%
+% Notice that simple literals do no longer exist in RDF 1.1.
+% Literals with neither language tag nor datatype are
+% assumed to be of type `xsd:string`.
 %
 %	@tbd	Well, this is the long-term idea.
 %	@tbd	Add mode (-,+)
