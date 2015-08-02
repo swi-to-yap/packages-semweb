@@ -689,84 +689,131 @@ lang_equal(Lang1, Lang2) :-
 		 *     BASIC TRIPLE QUERIES	*
 		 *******************************/
 
-%%	rdf(?Subject, ?Predicate, ?Object) is nondet.
+%! rdf(?Subject, ?Predicate, ?Object) is nondet.
 %
-%	Elementary query for triples. Subject   and  Predicate are atoms
-%	representing the fully qualified URL of  the resource. Object is
-%	either an atom representing a resource  or literal(Value) if the
-%	object  is  a  literal  value.   If    a   value   of  the  form
-%	NameSpaceID:LocalName is provided it  is   expanded  to a ground
-%	atom  using  expand_goal/2.  This  implies   you  can  use  this
-%	construct in compiled code without paying a performance penalty.
-%	Literal values take one of the following forms:
+% Query for
+% [triple patterns](http://www.w3.org/TR/sparql11-query/#sparqlTriplePatterns),
+% i.e., singular triples.
 %
-%	  * Atom
-%	  If the value is a simple atom it is the textual representation
-%	  of a string literal without explicit type or language
-%	  qualifier.
 %
-%	  * lang(LangID, Atom)
-%	  Atom represents the text of a string literal qualified with
-%	  the given language.
+% ### Arguments
 %
-%	  * type(TypeID, Value)
-%	  Used for attributes qualified using the =|rdf:datatype|=
-%	  TypeID. The Value is either the textual representation or a
-%	  natural Prolog representation. See the option
-%	  convert_typed_literal(:Convertor) of the parser. The storage
-%	  layer provides efficient handling of atoms, integers (64-bit)
-%	  and floats (native C-doubles). All other data is represented
-%	  as a Prolog record.
+% * Subject is an atom representing either a
+%   [blank node](http://www.w3.org/TR/rdf11-concepts/#section-blank-nodes)
+%   or an [IRI](http://www.w3.org/TR/rdf11-concepts/#section-IRIs).
 %
-%	For literal querying purposes, Object can be of the form
-%	literal(+Query, -Value), where Query is one of the terms below.
+% * Predicate is an atom representing an IRI.
 %
-%	  * plain(+Text)
-%	  Perform exact match and demand the language or type qualifiers
-%	  to match. This query is fully indexed.
+% * Object is either an atom representing a blank node or an IRI,
+%   or is a compound term representing an
+%   [RDF literal](http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal).
+%   Such compound terms can take one of the following forms:
 %
-%	  * exact(+Text)
-%	  Perform exact, but case-insensitive match. This query is
-%	  fully indexed.
+%     * literal(type(D,Lex))
+%       D is an atom denoting a
+%       [datatype IRI](http://www.w3.org/TR/rdf11-concepts/#dfn-datatype-iri)
+%       and Lex is an atom denoting a
+%       [lexical form](http://www.w3.org/TR/rdf11-concepts/#dfn-lexical-form)
+%       for that datatype.
 %
-%	  * substring(+Text)
-%	  Match any literal that contains Text as a case-insensitive
-%	  substring. The query is not indexed on Object.
+%     * literal(lang(Lang,Lex))
+%       This denotes a language-tagged string.
+%       Lang is atom that represents a
+%       [language tag](http://tools.ietf.org/html/bcp47) and
+%       Lex is an atom that represents a lexical form within
+%       the lexical space of datatype IRI
+%       [`rdf:langString`](http://www.w3.org/TR/rdf11-concepts/#dfn-language-tagged-string).
 %
-%	  * word(+Text)
-%	  Match any literal that contains Text delimited by a non
-%	  alpha-numeric character, the start or end of the string. The
-%	  query is not indexed on Object.
+%     * literal(Lex)
+%       This is an abbreviation for literal(type(xsd:string,Lex)).
 %
-%	  * prefix(+Text)
-%	  Match any literal that starts with Text. This call is intended
-%	  for completion. The query is indexed using the skip list of
-%	  literals.
 %
-%	  * ge(+Literal)
-%	  Match any literal that is equal or larger then Literal in the
-%	  ordered set of literals.
+% ### Compact IRI notation
 %
-%	  * le(+Literal)
-%	  Match any literal that is equal or smaller then Literal in the
-%	  ordered set of literals.
+% Some IRIs can be rather long.
+% Having long IRI-denoting atoms in code is ugly
+% and typing long IRI-denoting atoms in the top-level is cumbersome.
+% Therefore IRIs can be compactly represented by compound terms
+% of the form `Prefix:LocalName`
+% `Prefix` abbreviates the IRI of the namespace in which LocalName occurs.
+% Compact notation is expanded by concatenating the local name
+% to the namespace, resulting in an absolute IRI.
 %
-%	  * between(+Literal1, +Literal2)
-%	  Match any literal that is between Literal1 and Literal2 in the
-%	  ordered set of literals. This may include both Literal1 and
-%	  Literal2.
+% Since compact IRI expansion is implemented with expand_goal/2
+% the use of these constructs in compiled code does not incur
+% a performance penalty.
 %
-%	  * like(+Pattern)
-%	  Match any literal that matches Pattern case insensitively,
-%	  where the `*' character in Pattern matches zero or more
-%	  characters.
 %
-%	Backtracking never returns duplicate triples.  Duplicates can be
-%	retrieved using rdf/4. The predicate   rdf/3 raises a type-error
-%	if called with improper arguments.  If   rdf/3  is called with a
-%	term  literal(_)  as  Subject  or   Predicate  object  it  fails
-%	silently.  This  allows   for   graph    matching   goals   like
-%	rdf(S,P,O),rdf(O,P2,O2) to proceed without errors.
+% ### Filters on literals
+%
+% For literal querying purposes, Object can be of the form
+% literal(+Query, -Value), where Query is one of the terms below.
+%
+%   * plain(+Text)
+%   Perform exact match and demand the language or type qualifiers
+%   to match. This query is fully indexed.
+%
+%   * exact(+Text)
+%   Perform exact, but case-insensitive match. This query is
+%   fully indexed.
+%
+%   * substring(+Text)
+%   Match any literal that contains Text as a case-insensitive
+%   substring. The query is not indexed on Object.
+%
+%   * word(+Text)
+%   Match any literal that contains Text delimited by a non
+%   alpha-numeric character, the start or end of the string. The
+%   query is not indexed on Object.
+%
+%   * prefix(+Text)
+%   Match any literal that starts with Text. This call is intended
+%   for completion. The query is indexed using the skip list of
+%   literals.
+%
+%   * ge(+Literal)
+%   Match any literal that is equal or larger then Literal in the
+%   ordered set of literals.
+%
+%   * le(+Literal)
+%   Match any literal that is equal or smaller then Literal in the
+%   ordered set of literals.
+%
+%   * between(+Literal1, +Literal2)
+%   Match any literal that is between Literal1 and Literal2 in the
+%   ordered set of literals. This may include both Literal1 and
+%   Literal2.
+%
+%   * like(+Pattern)
+%   Match any literal that matches Pattern case insensitively,
+%   where the `*' character in Pattern matches zero or more
+%   characters.
+%
+%
+% ### Duplicates
+%
+% Backtracking never returns duplicate triples in case the same triple
+% appears in multiple graphs.
+% Triple duplicates that appear in multiple graphs can be by using rdf/4.
+%
+%
+% ### Failure / error
+%
+% rdf/3 raises a type-error if called with improper arguments.
+% A special case occurs when rdf/3 is called with a literal compound term
+% in the subject and/or predicate positions.
+% Then a type-error is not raised but the predicate fails silently instead.
+% This allows for graph matching goals like rdf(S,P,O),rdf(O,P2,O2)
+% to proceed without errors.
+
+/* OLD PARTS OF THE DOCUMENTATION:
+%   The Value is either the textual representation or a
+%   natural Prolog representation. See the option
+%   convert_typed_literal(:Convertor) of the parser. The storage
+%   layer provides efficient handling of atoms, integers (64-bit)
+%   and floats (native C-doubles). All other data is represented
+%   as a Prolog record.
+*/
 
 %%	rdf(?Subject, ?Predicate, ?Object, ?Source) is nondet.
 %
