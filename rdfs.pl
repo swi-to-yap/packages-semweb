@@ -265,15 +265,35 @@ after_char(Atom, Char, Rest) :-
 %	true,  but  guaranteed  to  generate    `rdfs:label`   before  any
 %	subproperty thereof.
 
-label_of(Resource, Lang, Label) :-
-	rdf(Resource, rdfs:label, literal(lang(Lang, Label))).
-label_of(Resource, Lang, Label) :-
+label_of(Resource, L, Label) :-
+	rdf(Resource, rdfs:label, literal(lang(LangTag, Label))),
+        basic_filtering(L, LangTag).
+label_of(Resource, L, Label) :-
 	rdf_equal(rdfs:label, LabelP),
-	rdf_has(Resource, LabelP, literal(lang(Lang, Label)), P),
+	rdf_has(Resource, LabelP, literal(lang(LangTag, Label)), P),
+        basic_filtering(L, LangTag),
 	P \== LabelP.
-label_of(Resource, Lang, Label) :-
-	var(Lang),
+label_of(Resource, LangRange, Label) :-
+	var(LangRange),
 	rdf_has(Resource, rdfs:label, literal(type(xsd:string, Label))).
+
+basic_filtering(L, _) :-
+        var(L), !.
+basic_filtering(L0, Tag) :-
+        \+ is_list(L0), !,
+        basic_filtering([L0], Tag).
+basic_filtering(L, Tag) :-
+        downcase_atom(Tag, TagLow),
+        member(Range, L),
+        downcase_atom(Range, RangeLow),
+	basic_filtering_range(RangeLow, TagLow).
+
+basic_filtering_range(Range, _) :-
+        Range == '*', !.
+basic_filtering_range(Range, Tag) :-
+        atom_concat(Range, Rest, Tag),
+        (Rest == '' ; atom_concat(-, _, Rest)), !.
+
 
 %%	rdfs_class_property(+Class, ?Property)
 %
